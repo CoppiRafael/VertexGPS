@@ -198,12 +198,14 @@ function terrainFor(split) {
   return 'Plano / ondulado';
 }
 
+const GRADE_HUES = { steepUp: '#f85149', up: '#f0883e', upLight: '#f0b45f', flat: '#a6b8aa', down: '#58a6ff', steepDown: '#4d7fc2' };
+
 function gradeColor(grade) {
-  if (grade > 15) return '#f85149';
-  if (grade > 5) return '#f0883e';
-  if (grade > -5) return '#bc8cff';
-  if (grade > -10) return '#58a6ff';
-  return '#39d4dd';
+  if (grade > 15) return GRADE_HUES.steepUp;
+  if (grade > 5) return GRADE_HUES.up;
+  if (grade > -5) return GRADE_HUES.flat;
+  if (grade > -10) return GRADE_HUES.down;
+  return GRADE_HUES.steepDown;
 }
 
 function setHtml(id, value) {
@@ -733,18 +735,18 @@ function drawGradients() {
     const section = document.createElement('div'); section.className = 'gs'; section.style.flex = '1'; section.style.background = gradeColor(gradient.g); section.title = `${gradient.d.toFixed(2)} km · ${gradient.g >= 0 ? '+' : ''}${gradient.g.toFixed(1)}%`; strip.appendChild(section);
     if (gradient.g > 15) categories.strongUp += 1; else if (gradient.g > 5) categories.up += 1; else if (gradient.g > -5) categories.flat += 1; else if (gradient.g > -10) categories.down += 1; else categories.strongDown += 1;
   });
-  const labels = [['Subida forte >15%', categories.strongUp, 'var(--red)'], ['Subida 5–15%', categories.up, 'var(--org)'], ['Plano ±5%', categories.flat, 'var(--pur)'], ['Descida −5 a −10%', categories.down, 'var(--blu)'], ['Descida forte <−10%', categories.strongDown, '#39d4dd']];
+  const labels = [['Subida forte >15%', categories.strongUp, 'var(--red)'], ['Subida 5–15%', categories.up, 'var(--org)'], ['Plano ±5%', categories.flat, 'var(--tx2)'], ['Descida −5 a −10%', categories.down, 'var(--blu)'], ['Descida forte <−10%', categories.strongDown, 'var(--blu2)']];
   stats.innerHTML = labels.map(([label, amount, color]) => `<div class="gst"><div class="gv" style="color:${color}">${(amount / G.length * 100).toFixed(1)}%</div><div class="gl">${label}</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3);margin-top:2px">~${(amount / G.length * metrics.distanceKm).toFixed(1)} km</div></div>`).join('');
   document.getElementById('gradientAxis').innerHTML = Array.from({ length: 6 }, (_, index) => `<span>${(metrics.distanceKm / 5 * index).toFixed(index ? 1 : 0)} km</span>`).join('');
   drawGradientChart();
 }
 
 function gradientBand(grade) {
-  if (grade > 15) return { id: 'up-steep', label: 'Subida forte', color: '#f85149' };
-  if (grade > 5) return { id: 'up', label: 'Subida', color: '#f0883e' };
-  if (grade > -5) return { id: 'flat', label: 'Plano / ondulado', color: '#bc8cff' };
-  if (grade > -10) return { id: 'down', label: 'Descida', color: '#58a6ff' };
-  return { id: 'down-steep', label: 'Descida forte', color: '#39d4dd' };
+  if (grade > 15) return { id: 'up-steep', label: 'Subida forte', color: GRADE_HUES.steepUp };
+  if (grade > 5) return { id: 'up', label: 'Subida', color: GRADE_HUES.up };
+  if (grade > -5) return { id: 'flat', label: 'Plano / ondulado', color: GRADE_HUES.flat };
+  if (grade > -10) return { id: 'down', label: 'Descida', color: GRADE_HUES.down };
+  return { id: 'down-steep', label: 'Descida forte', color: GRADE_HUES.steepDown };
 }
 
 function sustainedGradientRuns() {
@@ -771,7 +773,7 @@ function renderGradientDetail() {
   const lowest = Math.min(...G.map((sample) => sample.g));
   const strongUp = gradientBuckets().find((bucket) => bucket.label === '> 15%').distance;
   const strongDown = gradientBuckets().find((bucket) => bucket.label === '< −10%').distance;
-  document.getElementById('gradientKeyStats').innerHTML = `<div><span>Pico de subida</span><strong style="color:#f85149">+${highest.toFixed(1)}%</strong></div><div><span>Pico de descida</span><strong style="color:#39d4dd">${lowest.toFixed(1)}%</strong></div><div><span>Subida forte</span><strong>${strongUp.toFixed(2)} km</strong></div><div><span>Descida forte</span><strong>${strongDown.toFixed(2)} km</strong></div>`;
+  document.getElementById('gradientKeyStats').innerHTML = `<div><span>Pico de subida</span><strong style="color:var(--red)">+${highest.toFixed(1)}%</strong></div><div><span>Pico de descida</span><strong style="color:var(--blu2)">${lowest.toFixed(1)}%</strong></div><div><span>Subida forte</span><strong>${strongUp.toFixed(2)} km</strong></div><div><span>Descida forte</span><strong>${strongDown.toFixed(2)} km</strong></div>`;
   const runs = sustainedGradientRuns().sort((a, b) => Math.abs(b.average) * b.length - Math.abs(a.average) * a.length).slice(0, 6);
   document.getElementById('gradientRuns').innerHTML = runs.length ? runs.map((run) => `<button class="gradient-run" type="button" data-run="${run.id}"><span style="color:${run.band.color}">${run.band.label}</span><strong>Km ${run.start.toFixed(2)}–${run.end.toFixed(2)}</strong><small>${run.length.toFixed(2)} km · média ${run.average >= 0 ? '+' : ''}${run.average.toFixed(1)}% · pico ${run.peak >= 0 ? '+' : ''}${run.peak.toFixed(1)}%</small></button>`).join('') : '<p class="empty-state">Não há trechos sustentados suficientes para destacar.</p>';
   document.querySelectorAll('[data-run]').forEach((button) => button.addEventListener('click', () => { const run = runs.find((item) => item.id === button.dataset.run); document.getElementById('segmentStart').value = run.start.toFixed(2); document.getElementById('segmentEnd').value = run.end.toFixed(2); analyzeSegment(run.start, run.end); document.querySelector('[data-tab="alt"]')?.click(); }));
@@ -1134,7 +1136,7 @@ function setupTabs() {
 }
 
 function gradientBuckets() {
-  const buckets = [{ label: '< −10%', min: -Infinity, max: -10, color: '#39d4dd' }, { label: '−10 a −5%', min: -10, max: -5, color: '#58a6ff' }, { label: '−5 a 5%', min: -5, max: 5, color: '#bc8cff' }, { label: '5 a 10%', min: 5, max: 10, color: '#f0b45f' }, { label: '10 a 15%', min: 10, max: 15, color: '#f0883e' }, { label: '> 15%', min: 15, max: Infinity, color: '#f85149' }].map((bucket) => ({ ...bucket, distance: 0 }));
+  const buckets = [{ label: '< −10%', min: -Infinity, max: -10, color: GRADE_HUES.steepDown }, { label: '−10 a −5%', min: -10, max: -5, color: GRADE_HUES.down }, { label: '−5 a 5%', min: -5, max: 5, color: GRADE_HUES.flat }, { label: '5 a 10%', min: 5, max: 10, color: GRADE_HUES.upLight }, { label: '10 a 15%', min: 10, max: 15, color: GRADE_HUES.up }, { label: '> 15%', min: 15, max: Infinity, color: GRADE_HUES.steepUp }].map((bucket) => ({ ...bucket, distance: 0 }));
   G.forEach((sample, index) => {
     const next = G[index + 1];
     const distance = next ? next.d - sample.d : Math.max(0, metrics.distanceKm - sample.d);
@@ -1225,4 +1227,6 @@ function setupTabs() {
 document.addEventListener('vertex:ready', () => {
   document.body.classList.remove('has-route');
   setupTabs(); setupUpload(); setupCoachControls(); populateProfile();
+  const heroVideo = document.querySelector('.hero-video');
+  if (heroVideo && window.matchMedia('(prefers-reduced-motion: reduce)').matches) heroVideo.pause();
 });
