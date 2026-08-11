@@ -4,6 +4,11 @@ let G = [];
 let T3 = [];
 let metrics = null;
 let routeMap = null;
+let mapElevationMarker = null;
+let mapHoverFrame = null;
+let queuedMapHover = null;
+let cumulativeGain = [];
+let cumulativeLoss = [];
 let zS = 0;
 let zE = 0;
 let rawRoutePoints = [];
@@ -67,11 +72,16 @@ function buildAnalysis(rawPoints, fileName) {
   P = smoothElevation(points);
   let gain = 0;
   let loss = 0;
+  cumulativeGain = new Array(P.length).fill(0);
+  cumulativeLoss = new Array(P.length).fill(0);
   P.forEach((point, index) => {
-    if (!index || point.breakBefore) return;
-    const delta = point.e - P[index - 1].e;
-    if (delta > 0) gain += delta;
-    else loss += Math.abs(delta);
+    if (index && !point.breakBefore) {
+      const delta = point.e - P[index - 1].e;
+      if (delta > 0) gain += delta;
+      else loss += Math.abs(delta);
+    }
+    cumulativeGain[index] = gain;
+    cumulativeLoss[index] = loss;
   });
 
   const elevation = P.map((point) => point.e);
@@ -261,6 +271,108 @@ function renderZoom() {
   });
 }
 
+function routeIndexAtDistance(distance) {
+  let low = 0;
+  let high = P.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (P[middle].d < distance) low = middle + 1;
+    else high = middle;
+  }
+  const previous = Math.max(0, low - 1);
+  return Math.abs(P[low].d - distance) < Math.abs(P[previous].d - distance) ? low : previous;
+}
+
+function nearestRouteIndex(latlng) {
+  const latitudeFactor = Math.cos(latlng.lat * Math.PI / 180);
+  const stride = Math.max(1, Math.ceil(P.length / 1600));
+  let closest = 0;
+  let closestDistance = Infinity;
+  const squaredDistance = (point) => (point.la - latlng.lat) ** 2 + ((point.lo - latlng.lng) * latitudeFactor) ** 2;
+  for (let index = 0; index < P.length; index += stride) {
+    const distance = squaredDistance(P[index]);
+    if (distance < closestDistance) { closest = index; closestDistance = distance; }
+  }
+  const start = Math.max(0, closest - stride * 2);
+  const end = Math.min(P.length - 1, closest + stride * 2);
+  for (let index = start; index <= end; index += 1) {
+    const distance = squaredDistance(P[index]);
+    if (distance < closestDistance) { closest = index; closestDistance = distance; }
+  }
+  return closest;
+}
+
+function renderMapElevationInfo(index) {
+  const point = P[index];
+  const grade = pointGrade(index);
+  document.getElementById('mapElevationInfo').innerHTML = `<span><strong>Km ${(point.d / 1000).toFixed(2)}</strong></span><span>Altitude <strong>${number.format(point.e)} m</strong></span><span>Gradiente <strong style="color:${gradeColor(grade)}">${grade >= 0 ? '+' : ''}${grade.toFixed(1)}%</strong></span><span>D+ acum. <strong>+${number.format(cumulativeGain[index])} m</strong></span><span>D− acum. <strong>−${number.format(cumulativeLoss[index])} m</strong></span>`;
+}
+
+function drawMapElevationProfile(activeIndex = null) {
+  const canvas = document.getElementById('mapElevationC');
+  const width = canvas.parentElement.getBoundingClientRect().width;
+  if (!width) return;
+  const height = 150;
+  const dpr = window.devicePixelRatio || 1;
+  const ctx = canvas.getContext('2d');
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  canvas.style.height = `${height}px`;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+  const padding = { t: 14, r: 10, b: 22, l: 42 };
+  const chartWidth = width - padding.l - padding.r;
+  const chartHeight = height - padding.t - padding.b;
+  const minElevation = metrics.minElevation - 12;
+  const maxElevation = metrics.maxElevation + 12;
+  const x = (distance) => padding.l + distance / Math.max(1, metrics.distance) * chartWidth;
+  const y = (elevation) => padding.t + chartHeight - (elevation - minElevation) / Math.max(1, maxElevation - minElevation) * chartHeight;
+  [0, .5, 1].forEach((ratio) => {
+    const elevation = minElevation + (maxElevation - minElevation) * ratio;
+    const lineY = y(elevation);
+    ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, lineY); ctx.lineTo(width - padding.r, lineY); ctx.stroke();
+    ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 5, lineY + 3);
+  });
+  const stride = Math.max(1, Math.ceil(P.length / 900));
+  const profile = [];
+  for (let index = 0; index < P.length; index += stride) profile.push(P[index]);
+  if (profile.at(-1) !== P.at(-1)) profile.push(P.at(-1));
+  const fill = ctx.createLinearGradient(0, padding.t, 0, height - padding.b);
+  fill.addColorStop(0, 'rgba(180,66,0,.36)'); fill.addColorStop(1, 'rgba(180,66,0,.02)');
+  ctx.beginPath(); ctx.moveTo(x(profile[0].d), y(profile[0].e)); profile.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.lineTo(x(profile.at(-1).d), height - padding.b); ctx.lineTo(x(profile[0].d), height - padding.b); ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+  ctx.strokeStyle = '#d65b19'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(x(profile[0].d), y(profile[0].e)); profile.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
+  ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'left'; ctx.fillText('0 km', padding.l, height - 7); ctx.textAlign = 'right'; ctx.fillText(`${metrics.distanceKm.toFixed(1)} km`, width - padding.r, height - 7);
+  if (activeIndex !== null) {
+    const point = P[activeIndex];
+    const activeX = x(point.d); const activeY = y(point.e);
+    ctx.strokeStyle = 'rgba(245,212,191,.76)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(activeX, padding.t); ctx.lineTo(activeX, height - padding.b); ctx.stroke();
+    ctx.fillStyle = '#f5d4bf'; ctx.beginPath(); ctx.arc(activeX, activeY, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#b44200'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  canvas.onmousemove = (event) => {
+    const bounds = canvas.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left - padding.l) / chartWidth));
+    updateMapElevationFocus(routeIndexAtDistance(ratio * metrics.distance));
+  };
+}
+
+function updateMapElevationFocus(index) {
+  if (!P[index]) return;
+  const point = P[index];
+  drawMapElevationProfile(index);
+  renderMapElevationInfo(index);
+  if (mapElevationMarker) { mapElevationMarker.setLatLng([point.la, point.lo]); mapElevationMarker.setStyle({ opacity: 1, fillOpacity: 1 }); }
+}
+
+function queueMapElevationFocus(latlng) {
+  queuedMapHover = latlng;
+  if (mapHoverFrame) return;
+  mapHoverFrame = window.requestAnimationFrame(() => {
+    mapHoverFrame = null;
+    if (queuedMapHover) updateMapElevationFocus(nearestRouteIndex(queuedMapHover));
+  });
+}
+
 function initMap() {
   if (routeMap) routeMap.remove();
   routeMap = L.map('map', { zoomControl: true, attributionControl: false });
@@ -282,6 +394,9 @@ function initMap() {
     }
   });
   routeMap.fitBounds(L.latLngBounds(track).pad(0.06));
+  mapElevationMarker = L.circleMarker([start.la, start.lo], { radius: 5, color: '#f5d4bf', fillColor: '#b44200', fillOpacity: 0, opacity: 0, weight: 2, interactive: false }).addTo(routeMap);
+  routeMap.on('mousemove', (event) => queueMapElevationFocus(event.latlng));
+  drawMapElevationProfile();
 }
 
 function analyzeSegment(startKm, endKm, { focusElevation = true } = {}) {

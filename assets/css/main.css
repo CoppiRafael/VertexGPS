@@ -111,6 +111,15 @@ body:not(.has-route) .analysis-hdr,body:not(.has-route) .stats,body:not(.has-rou
 #map .route-trace-glow { filter:drop-shadow(0 0 8px rgba(180,66,0,.46)); }
 #map .route-trace-core { filter:drop-shadow(0 0 2px rgba(180,66,0,.62)); }
 .map-footer { display:flex; gap:32px; margin-top:10px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--tx3); }
+.map-elevation { margin-top:18px; padding-top:18px; border-top:1px solid var(--brd); }
+.map-elevation-head { display:flex; justify-content:space-between; align-items:end; gap:14px; margin-bottom:10px; }
+.map-elevation-head .card-eye { margin-bottom:2px; }
+.map-elevation-title { font:700 13px 'Manrope',sans-serif; }
+.map-elevation-head > span { color:var(--tx3); font:9px 'JetBrains Mono',monospace; letter-spacing:.7px; text-transform:uppercase; }
+.map-elevation-chart { background:rgba(4,14,8,.56); }
+#mapElevationC { height:150px; cursor:crosshair; }
+.map-elevation-info { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:9px; color:var(--tx3); font:10px 'JetBrains Mono',monospace; }
+.map-elevation-info strong { color:var(--tx2); font-weight:600; }
 
 /* ── CANVAS ── */
 .chart-wrap { position:relative; background:var(--sf); border:1px solid var(--brd); border-radius:8px; overflow:hidden; }
