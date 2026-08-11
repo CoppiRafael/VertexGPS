@@ -14,6 +14,7 @@ let currentBriefingId = null;
 let pendingBriefingOverrides = null;
 let hasLoadedGpx = false;
 let activityAnalysis = null;
+let targetProjection = null;
 
 const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -50,6 +51,7 @@ function smoothElevation(points) {
 }
 
 function buildAnalysis(rawPoints, fileName) {
+  targetProjection = null;
   rawRoutePoints = rawPoints.map((point) => ({ la: point.la, lo: point.lo, e: point.e, t: point.t || null, breakBefore: Boolean(point.breakBefore) }));
   const missingElevation = rawPoints.filter((point) => !Number.isFinite(point.e)).length;
   const elevationJumps = rawPoints.slice(1).filter((point, index) => Number.isFinite(point.e) && Number.isFinite(rawPoints[index].e) && Math.abs(point.e - rawPoints[index].e) > 30).length;
@@ -142,7 +144,7 @@ function buildSplits() {
       ng: grades.length ? Math.min(...grades) : 0,
     };
   });
-  T3 = [...S].sort((a, b) => b.g - a.g).slice(0, Math.min(3, S.length));
+  T3 = [...S].sort((a, b) => splitLoad(b) - splitLoad(a)).slice(0, Math.min(3, S.length));
 }
 
 function buildRouteSectors() {
@@ -217,7 +219,7 @@ function renderSummary() {
   document.getElementById('elevationStatus').textContent = metrics.hasElevation ? 'Altimetria disponível' : 'Sem elevação no arquivo';
   document.getElementById('mapFooter').innerHTML = `<span>${decimal.format(metrics.distanceKm)} km</span><span>${number.format(metrics.gain)} m D+</span><span>fechamento: ${number.format(metrics.startEndDistance)} m</span>`;
 
-  const mainClimb = T3[0];
+  const mainClimb = [...S].sort((a, b) => b.g - a.g)[0];
   const insights = [
     ['Carga vertical', `${number.format(metrics.vertical)} m de subida por quilômetro.`],
     ['Amplitude altimétrica', `${number.format(metrics.range)} m entre ${number.format(metrics.minElevation)} m e ${number.format(metrics.maxElevation)} m.`],
@@ -229,7 +231,14 @@ function renderSummary() {
 
 function renderTopThree() {
   const container = document.getElementById('top3Grid');
-  container.innerHTML = T3.map((split, index) => `<div class="top3-card"><div class="t3-num">0${index + 1}</div><div class="t3-km">Km ${split.km - 1}–${Math.min(split.km, metrics.distanceKm).toFixed(1)}</div><div class="t3-val">+${split.g}<span class="t3-unit"> m</span></div><div class="t3-desc">${terrainFor(split)} · média ${split.ag.toFixed(1)}% · pico ${split.mg.toFixed(1)}%</div></div>`).join('');
+  container.innerHTML = T3.map((split, index) => {
+    const endKm = Math.min(split.km, metrics.distanceKm);
+    const lengthKm = Math.max(.01, (split.end - split.start) / 1000);
+    const peak = Math.abs(split.mg) >= Math.abs(split.ng) ? split.mg : split.ng;
+    const net = split.mx - split.mn;
+    const dominant = split.g >= split.l ? { value: `+${split.g}`, label: 'm D+' } : { value: `−${split.l}`, label: 'm D−' };
+    return `<div class="top3-card"><div class="t3-head"><div><div class="t3-num">SETOR 0${index + 1}</div><div class="t3-km">Km ${(split.km - 1).toFixed(1)}–${endKm.toFixed(1)}</div></div><span class="t3-type">${terrainFor(split)}</span></div><div class="t3-val">${dominant.value}<span class="t3-unit"> ${dominant.label}</span></div><div class="t3-desc">${lengthKm.toFixed(2)} km de setor · componente vertical dominante</div><div class="t3-details"><div><span>Subida</span><strong>+${split.g} m D+</strong></div><div><span>Descida</span><strong>−${split.l} m D−</strong></div><div><span>Inclinação média</span><strong style="color:${gradeColor(split.ag)}">${split.ag >= 0 ? '+' : ''}${split.ag.toFixed(1)}%</strong></div><div><span>Pico local</span><strong style="color:${gradeColor(peak)}">${peak >= 0 ? '+' : ''}${peak.toFixed(1)}%</strong></div><div><span>Faixa altimétrica</span><strong>${split.mn}–${split.mx} m</strong></div><div><span>Amplitude</span><strong>${net >= 0 ? '+' : ''}${net} m</strong></div></div><div class="t3-load">Índice de carga relativo: ${Math.round(splitLoad(split))}</div></div>`;
+  }).join('');
 }
 
 function renderZoom() {
@@ -257,7 +266,8 @@ function initMap() {
   routeMap = L.map('map', { zoomControl: true, attributionControl: false });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(routeMap);
   const track = P.map((point) => [point.la, point.lo]);
-  L.polyline(track, { color: '#3fb950', weight: 4, opacity: 0.9 }).addTo(routeMap);
+  L.polyline(track, { color: '#b44200', weight: 12, opacity: 0.18, lineCap: 'round', lineJoin: 'round', className: 'route-trace-glow' }).addTo(routeMap);
+  L.polyline(track, { color: '#b44200', weight: 4.5, opacity: 1, lineCap: 'round', lineJoin: 'round', className: 'route-trace-core' }).addTo(routeMap);
   const start = P[0];
   const end = P.at(-1);
   const peak = P.reduce((highest, point) => point.e > highest.e ? point : highest);
@@ -274,7 +284,7 @@ function initMap() {
   routeMap.fitBounds(L.latLngBounds(track).pad(0.06));
 }
 
-function analyzeSegment(startKm, endKm) {
+function analyzeSegment(startKm, endKm, { focusElevation = true } = {}) {
   const start = Math.max(0, Math.min(startKm, metrics.distanceKm));
   const end = Math.max(start, Math.min(endKm, metrics.distanceKm));
   const points = P.filter((point) => point.d >= start * 1000 && point.d <= end * 1000);
@@ -294,7 +304,7 @@ function analyzeSegment(startKm, endKm) {
   const minGrade = grades.length ? Math.min(...grades) : 0;
   const peakGrade = Math.abs(maxGrade) > Math.abs(minGrade) ? maxGrade : minGrade;
   document.getElementById('segmentResult').innerHTML = `<div class="segment-metric"><span>Distância</span><strong>${distance.toFixed(2)} km</strong></div><div class="segment-metric"><span>Ganho</span><strong class="up">+${number.format(gain)} m</strong></div><div class="segment-metric"><span>Perda</span><strong class="dn">−${number.format(loss)} m</strong></div><div class="segment-metric"><span>Altitude</span><strong>${number.format(Math.min(...points.map((point) => point.e)))}–${number.format(Math.max(...points.map((point) => point.e)))} m</strong></div><div class="segment-metric"><span>Grade média</span><strong style="color:${gradeColor(averageGrade)}">${averageGrade >= 0 ? '+' : ''}${averageGrade.toFixed(1)}%</strong></div><div class="segment-metric"><span>Maior variação</span><strong style="color:${gradeColor(peakGrade)}">${peakGrade >= 0 ? '+' : ''}${peakGrade.toFixed(1)}%</strong></div>`;
-  setZ([start, end], null);
+  if (focusElevation) setZ([start, end], null);
 }
 
 function renderAutomaticSplits() {
@@ -357,7 +367,7 @@ function setupElevationAnalysis() {
   endInput.value = end.toFixed(2);
   document.getElementById('segmentAnalyze').onclick = () => analyzeSegment(Number(startInput.value), Number(endInput.value));
   renderAutomaticSplits();
-  analyzeSegment(0, end);
+  analyzeSegment(0, end, { focusElevation: false });
 }
 
 function setZ(value, button) {
@@ -440,9 +450,10 @@ function paceSeconds(value) {
 }
 
 function timeLabel(seconds) {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = Math.floor(seconds % 60);
+  const rounded = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+  const rest = rounded % 60;
   return hours ? `${hours}h${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}` : `${minutes}:${String(rest).padStart(2, '0')}`;
 }
 
@@ -471,6 +482,89 @@ function saveNotes(notes) {
   localStorage.setItem(notesStorageKey(), JSON.stringify(notes));
 }
 
+function targetDurationSeconds(value) {
+  const normalized = value.trim().toLowerCase().replace(',', '.');
+  if (!normalized) return NaN;
+  const colon = normalized.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+  if (colon) {
+    const hours = Number(colon[1]); const minutes = Number(colon[2]); const seconds = Number(colon[3] || 0);
+    return minutes < 60 && seconds < 60 ? hours * 3600 + minutes * 60 + seconds : NaN;
+  }
+  const explicit = normalized.match(/^(?:(\d+)\s*h(?:oras?)?\s*)?(?:(\d+)\s*(?:m|min|minutos?)?)?$/);
+  if (explicit && (explicit[1] || explicit[2])) return Number(explicit[1] || 0) * 3600 + Number(explicit[2] || 0) * 60;
+  const minutes = normalized.match(/^(\d+(?:\.\d+)?)\s*(?:m|min|minutos?)$/);
+  if (minutes) return Number(minutes[1]) * 60;
+  return NaN;
+}
+
+function standardDeviation(values) {
+  if (!values.length) return 0;
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return Math.sqrt(values.reduce((sum, value) => sum + (value - average) ** 2, 0) / values.length);
+}
+
+function splitProjectionProfile(split) {
+  const distanceKm = Math.max(.01, (split.end - split.start) / 1000);
+  const points = P.filter((point) => point.d >= split.start && point.d <= split.end);
+  const grades = G.filter((sample) => sample.d * 1000 >= split.start && sample.d * 1000 <= split.end).map((sample) => sample.g);
+  const elevationDeviation = standardDeviation(points.map((point) => point.e));
+  const gradeDeviation = standardDeviation(grades.length ? grades : [split.ag]);
+  const metres = distanceKm * 1000;
+  const climbRatio = split.g / metres;
+  const descentRatio = split.l / metres;
+  const peak = Math.max(Math.abs(split.mg), Math.abs(split.ng));
+  const reliefRatio = elevationDeviation / Math.max(150, metrics.range);
+  const coefficient = 1
+    + climbRatio * 4.5
+    + descentRatio * 1.35
+    + Math.max(0, split.ag) / 100 * .55
+    + Math.max(0, -split.ag) / 100 * .18
+    + gradeDeviation / 100 * 1.05
+    + peak / 100 * .38
+    + reliefRatio * .45;
+  return { split, distanceKm, gradeDeviation, elevationDeviation, coefficient, weight: distanceKm * coefficient };
+}
+
+function buildTargetProjection(targetSeconds) {
+  const profiles = S.map(splitProjectionProfile);
+  const totalWeight = profiles.reduce((sum, profile) => sum + profile.weight, 0);
+  const projected = profiles.map((profile) => ({ ...profile, duration: targetSeconds * profile.weight / totalWeight }));
+  const roundedPaces = projected.map((profile) => Math.max(1, Math.round(profile.duration / profile.distanceKm)));
+  const represented = roundedPaces.reduce((sum, pace, index) => sum + pace * projected[index].distanceKm, 0);
+  const correctionIndex = projected.length - 1;
+  roundedPaces[correctionIndex] = Math.max(1, roundedPaces[correctionIndex] + Math.round((targetSeconds - represented) / projected[correctionIndex].distanceKm));
+  return { targetSeconds, profiles: projected, paces: roundedPaces };
+}
+
+function renderProjectionSummary(projection) {
+  const slowest = [...projection.profiles].sort((a, b) => b.duration / b.distanceKm - a.duration / a.distanceKm)[0];
+  const mostVariable = [...projection.profiles].sort((a, b) => b.gradeDeviation - a.gradeDeviation)[0];
+  const heaviest = [...projection.profiles].sort((a, b) => b.coefficient - a.coefficient)[0];
+  document.getElementById('projectionSummary').innerHTML = `<div class="projection-stat"><span>Meta final</span><strong>${timeLabel(projection.targetSeconds)}</strong></div><div class="projection-stat"><span>Pace médio teórico</span><strong>${formatPace(projection.targetSeconds / metrics.distanceKm)} /km</strong></div><div class="projection-stat"><span>Km mais lento</span><strong>Km ${slowest.split.km} · ${formatPace(slowest.duration / slowest.distanceKm)}</strong></div><div class="projection-stat"><span>Maior variabilidade</span><strong>Km ${mostVariable.split.km} · σ ${mostVariable.gradeDeviation.toFixed(1)}%</strong></div><div class="projection-stat"><span>Maior carga relativa</span><strong>Km ${heaviest.split.km} · ×${heaviest.coefficient.toFixed(2)}</strong></div></div>`;
+}
+
+function applyTargetProjection() {
+  const input = document.getElementById('targetFinishTime');
+  const targetSeconds = targetDurationSeconds(input.value);
+  if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) {
+    document.getElementById('projectionSummary').innerHTML = '<p class="projection-error">Informe uma meta válida, como 1:30 ou 1:30:00.</p>';
+    input.focus();
+    return;
+  }
+  targetProjection = buildTargetProjection(targetSeconds);
+  document.querySelectorAll('#sBody .pace-input').forEach((input, index) => { input.value = formatPace(targetProjection.paces[index]); });
+  renderProjectionSummary(targetProjection);
+  calcTotal();
+}
+
+function resetTargetProjection() {
+  targetProjection = null;
+  document.getElementById('targetFinishTime').value = '';
+  document.querySelectorAll('#sBody .pace-input').forEach((input, index) => { input.value = suggestedPace(S[index]); });
+  document.getElementById('projectionSummary').innerHTML = '';
+  calcTotal();
+}
+
 function initSplits() {
   const body = document.getElementById('sBody');
   const notes = savedNotes();
@@ -489,9 +583,14 @@ function initSplits() {
     noteInput.addEventListener('input', () => { notes[split.km] = noteInput.value; saveNotes(notes); });
     noteCell.appendChild(noteInput);
     row.appendChild(noteCell);
-    row.querySelector('.pace-input').addEventListener('input', calcTotal);
+    row.querySelector('.pace-input').addEventListener('input', () => { if (targetProjection) targetProjection.isAdjusted = true; calcTotal(); });
     body.appendChild(row);
   });
+  document.getElementById('targetFinishTime').value = '';
+  document.getElementById('projectionSummary').innerHTML = '';
+  document.getElementById('applyTargetProjection').onclick = applyTargetProjection;
+  document.getElementById('resetTargetProjection').onclick = resetTargetProjection;
+  document.getElementById('targetFinishTime').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); applyTargetProjection(); } };
   calcTotal();
 }
 
@@ -501,11 +600,13 @@ function calcTotal() {
     const seconds = paceSeconds(input.value);
     const accumulated = document.querySelectorAll('.acum')[index];
     if (Number.isNaN(seconds)) { accumulated.textContent = '—'; return; }
-    total += seconds;
+    total += seconds * Math.max(.01, (S[index].end - S[index].start) / 1000);
     accumulated.textContent = timeLabel(total);
   });
-  const average = total / S.length;
-  document.getElementById('totBar').innerHTML = `<div class="tot"><div class="tot-l">Tempo estimado</div><div class="tot-v" style="color:var(--em)">${timeLabel(total)}</div></div><div class="tot"><div class="tot-l">Pace médio</div><div class="tot-v" style="color:#e3b341">${formatPace(average)}<span style="font-size:14px;color:var(--tx2)"> /km</span></div></div><div class="tot"><div class="tot-l">Base do cálculo</div><div class="tot-v" style="font-size:18px">${decimal.format(metrics.distanceKm)} km</div></div>`;
+  const average = total / metrics.distanceKm;
+  const target = targetProjection ? `<div class="tot"><div class="tot-l">Meta escolhida</div><div class="tot-v" style="color:#f1b18d">${timeLabel(targetProjection.targetSeconds)}</div></div>` : '';
+  const adjustment = targetProjection?.isAdjusted ? ' ajustado manualmente' : '';
+  document.getElementById('totBar').innerHTML = `<div class="tot"><div class="tot-l">Tempo do plano${adjustment}</div><div class="tot-v" style="color:var(--em)">${timeLabel(total)}</div></div>${target}<div class="tot"><div class="tot-l">Pace médio</div><div class="tot-v" style="color:#e3b341">${formatPace(average)}<span style="font-size:14px;color:var(--tx2)"> /km</span></div></div><div class="tot"><div class="tot-l">Base do cálculo</div><div class="tot-v" style="font-size:18px">${decimal.format(metrics.distanceKm)} km</div></div>`;
 }
 
 function drawGradients() {
@@ -630,7 +731,7 @@ function drawEffortChart() {
 }
 
 function initStrategy() {
-  const hardest = T3[0];
+  const hardest = [...S].sort((a, b) => b.g - a.g)[0];
   const descent = [...S].sort((a, b) => a.ag - b.ag)[0];
   const cards = [
     { color: 'sc-o', tag: 'Setor-chave', title: `Subida do km ${hardest.km}`, text: `São +${hardest.g} m em aproximadamente 1 km, com gradiente médio de ${hardest.ag.toFixed(1)}%. Controle o esforço e use caminhada forte nos trechos inclinados.`, pace: suggestedPace(hardest) },
@@ -992,8 +1093,8 @@ async function loadActivity(file) {
 }
 
 function setupUpload() {
-  const input = document.getElementById('gpxFile'); const zone = document.getElementById('dropZone'); const activity = document.getElementById('activityFile');
-  input.addEventListener('change', () => loadGpx(input.files[0])); activity.addEventListener('change', () => loadActivity(activity.files[0]));
+  const input = document.getElementById('gpxFile'); const zone = document.getElementById('dropZone');
+  input.addEventListener('change', () => loadGpx(input.files[0]));
   ['dragenter', 'dragover'].forEach((eventName) => zone.addEventListener(eventName, (event) => { event.preventDefault(); zone.classList.add('is-dragging'); }));
   ['dragleave', 'drop'].forEach((eventName) => zone.addEventListener(eventName, (event) => { event.preventDefault(); zone.classList.remove('is-dragging'); }));
   zone.addEventListener('drop', (event) => loadGpx(event.dataTransfer.files[0]));
@@ -1001,10 +1102,9 @@ function setupUpload() {
 
 function setupTabs() {
   const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Splits por km'], ['grad', 'Gradiente'], ['carga', 'Carga'], ['insights', 'Insights'], ['strat', 'Estratégia']];
-  if (activityAnalysis) tabs.push(['comparison', 'Comparação']);
   if (hasLoadedGpx) tabs.push(['briefing', 'Briefing']);
   const navigation = document.getElementById('tabNav'); navigation.innerHTML = '';
-  tabs.forEach(([id, label], index) => { const button = document.createElement('button'); button.dataset.tab = id; button.className = `tab${index === 0 ? ' on' : ''}`; button.textContent = label; button.addEventListener('click', () => { document.querySelectorAll('.tpan').forEach((panel) => panel.classList.remove('on')); document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('on')); document.getElementById(`tab-${id}`).classList.add('on'); button.classList.add('on'); if (id === 'alt') { drawElevation(); drawVerticalLoadChart(); } if (id === 'grad') { drawGradientChart(); drawGradientVolatility(); } if (id === 'carga') drawEffortChart(); if (id === 'insights') { drawGradientHistogram(); drawCumulativeChart(); } if (id === 'comparison') drawActivityChart(); if (id === 'geral') setTimeout(() => routeMap.invalidateSize(), 0); }); navigation.appendChild(button); });
+  tabs.forEach(([id, label], index) => { const button = document.createElement('button'); button.dataset.tab = id; button.className = `tab${index === 0 ? ' on' : ''}`; button.textContent = label; button.addEventListener('click', () => { document.querySelectorAll('.tpan').forEach((panel) => panel.classList.remove('on')); document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('on')); document.getElementById(`tab-${id}`).classList.add('on'); button.classList.add('on'); if (id === 'alt') { drawElevation(); drawVerticalLoadChart(); } if (id === 'grad') { drawGradientChart(); drawGradientVolatility(); } if (id === 'carga') drawEffortChart(); if (id === 'insights') { drawGradientHistogram(); drawCumulativeChart(); } if (id === 'geral') setTimeout(() => routeMap.invalidateSize(), 0); }); navigation.appendChild(button); });
 }
 
 document.addEventListener('vertex:ready', () => {

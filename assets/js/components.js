@@ -1,6 +1,6 @@
 const componentNames = [
   'topbar', 'hero', 'analysis-header', 'stats', 'tabs', 'briefing', 'overview', 'top-three', 'elevation',
-  'splits', 'gradient', 'effort', 'insights', 'comparison', 'strategy', 'footer',
+  'splits', 'gradient', 'effort', 'insights', 'strategy', 'footer',
 ];
 
 async function loadComponents() {
