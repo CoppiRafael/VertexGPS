@@ -1,0 +1,46 @@
+<section id="tab-briefing" class="tpan">
+  <div class="briefing-header">
+    <div>
+      <div class="card-eye">Modo treinador</div>
+      <h2>Briefing de prova do atleta</h2>
+      <p>Personalize a leitura do percurso e transforme cada setor em uma decisão clara de execução.</p>
+      <div class="briefing-route" id="briefingRoute"></div>
+    </div>
+    <div class="briefing-actions">
+      <button id="saveBriefing" type="button">Salvar briefing</button>
+      <button id="newBriefing" type="button" class="secondary">Novo briefing</button>
+    </div>
+  </div>
+
+  <div class="briefing-grid">
+    <section class="card athlete-profile">
+      <div class="card-eye">Atleta e objetivo</div>
+      <div class="card-title">Contexto da estratégia</div>
+      <div class="profile-fields">
+        <label>Atleta<input id="athleteName" type="text" placeholder="Nome do atleta"></label>
+        <label>Prova<input id="eventName" type="text" placeholder="Nome da prova"></label>
+        <label>Data<input id="eventDate" type="date"></label>
+        <label>Tempo-alvo<input id="goalTime" type="text" inputmode="numeric" placeholder="Ex.: 2h15"></label>
+        <label>Experiência técnica<select id="technicalLevel"><option value="iniciante">Iniciante</option><option value="intermediario" selected>Intermediário</option><option value="avancado">Avançado</option></select></label>
+        <label class="poles-field"><input id="usesPoles" type="checkbox"> Usará bastões</label>
+      </div>
+    </section>
+    <section class="card executive-brief">
+      <div class="card-eye">Leitura executiva</div>
+      <div class="card-title">O que decide sua prova</div>
+      <div id="briefingSummary" class="briefing-summary"></div>
+    </section>
+  </div>
+
+  <section class="card sector-briefing">
+    <div class="card-eye">Setores e decisões</div>
+    <div class="card-title">Plano de execução por trecho</div>
+    <p class="briefing-note">Os setores são detectados pelo relevo. As recomendações são editáveis nas anotações de cada km e setor.</p>
+    <div id="briefingSectors" class="briefing-sectors"></div>
+  </section>
+
+  <section class="briefing-library">
+    <div class="library-heading"><div><div class="card-eye">Biblioteca local</div><h2>Briefings salvos neste dispositivo</h2></div><span id="libraryStatus"></span></div>
+    <div id="briefingLibrary" class="library-list"></div>
+  </section>
+</section>

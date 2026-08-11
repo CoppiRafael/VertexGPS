@@ -1,0 +1,49 @@
+<div id="tab-alt" class="tpan">
+  <div class="two-col">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div><div class="card-eye">Perfil completo</div><div class="card-title" style="margin-bottom:0">Curva de elevação</div></div>
+        <span class="card-badge">Elevação suavizada</span>
+      </div>
+      <div class="zoom-row" id="elevationZoom"></div>
+      <div class="chart-wrap"><canvas id="elC" height="320"></canvas>
+      <div class="ctt" id="ctt"><div class="cl">Distância</div><div class="cv" id="cd1">—</div><div class="cl" style="margin-top:5px">Altitude</div><div class="cv" id="ce1">—</div><div class="cl" style="margin-top:5px">Gradiente</div><div class="cv" id="cg1">—</div></div></div>
+    </div>
+    <div class="side-card ext-card">
+      <div class="side-eye" style="color:var(--em)">Extremos</div>
+      <div class="side-title">Faixa altimétrica</div>
+      <div class="ext-row"><div class="ext-label">Ponto mais alto</div><div class="ext-val" id="extMax">—</div></div>
+      <div class="ext-row"><div class="ext-label">Ponto mais baixo</div><div class="ext-val" id="extMin">—</div></div>
+      <div class="ext-row"><div class="ext-label">Amplitude</div><div class="ext-val" id="extRange">—</div></div>
+      <div class="ext-row"><div class="ext-label">Carga vertical</div><div class="ext-val" id="extVertical" style="color:var(--em)">—</div></div>
+    </div>
+  </div>
+
+  <section class="card segment-analysis">
+    <div class="card-eye">Análise manual de trecho</div>
+    <div class="card-title">Recorte exatamente o setor que você quer estudar</div>
+    <div class="segment-controls">
+      <label>Início (km)<input id="segmentStart" type="number" min="0" step="0.1"></label>
+      <label>Fim (km)<input id="segmentEnd" type="number" min="0" step="0.1"></label>
+      <button id="segmentAnalyze" type="button">Analisar trecho</button>
+    </div>
+    <div class="segment-result" id="segmentResult" aria-live="polite"></div>
+    <div class="sector-save">
+      <input id="customSectorTitle" type="text" placeholder="Nome do setor, ex.: subida decisiva">
+      <button id="saveCustomSector" type="button">Salvar como setor do treinador</button>
+    </div>
+  </section>
+
+  <div class="two-col elevation-details">
+    <section class="card">
+      <div class="card-eye">Carga vertical por km</div>
+      <div class="card-title">Subidas e descidas em cada split</div>
+      <div class="chart-wrap"><canvas id="verticalC" height="240"></canvas></div>
+    </section>
+    <section class="card">
+      <div class="card-eye">Splits automáticos</div>
+      <div class="card-title">Clique em um km para abrir o setor</div>
+      <div class="auto-splits" id="autoSplits"></div>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,20 @@
+<div id="tab-insights" class="tpan">
+  <div class="two-col">
+    <section class="card">
+      <div class="card-eye">Exposição ao gradiente</div>
+      <div class="card-title">Distribuição do percurso por inclinação</div>
+      <div class="chart-wrap"><canvas id="gradientHistogram" height="250"></canvas></div>
+    </section>
+    <section class="card">
+      <div class="card-eye">Carga acumulada</div>
+      <div class="card-title">Quando o esforço vertical se concentra</div>
+      <div class="chart-wrap"><canvas id="cumulativeC" height="250"></canvas></div>
+    </section>
+  </div>
+  <section class="card insights-matrix">
+    <div class="card-eye">Matriz de setores</div>
+    <div class="card-title">Comparação objetiva de subidas e descidas contínuas</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Setor</th><th>Tipo</th><th>Km</th><th>Distância</th><th>D+</th><th>D−</th><th>Grade média</th><th>Pico</th><th>Carga</th></tr></thead><tbody id="sectorMatrix"></tbody></table></div>
+  </section>
+  <section class="quality-grid" id="qualityReport"></section>
+</div>
