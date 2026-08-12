@@ -20,6 +20,10 @@ let pendingBriefingOverrides = null;
 let hasLoadedGpx = false;
 let activityAnalysis = null;
 let targetProjection = null;
+let elevationMarkers = [];
+let elevationClimbLabels = [];
+let annotationMode = null;
+let annotationsBound = false;
 
 const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -474,6 +478,62 @@ function drawVerticalLoadChart() {
   ctx.fillStyle = '#58a6ff'; ctx.fillText('D−', padding.l + 30, 12);
 }
 
+function annotationsStorageKey(kind) {
+  return `vertex-${kind}:${metrics.fileName}:${Math.round(metrics.distance)}`;
+}
+
+function loadAnnotations() {
+  try { elevationMarkers = JSON.parse(localStorage.getItem(annotationsStorageKey('markers'))) || []; }
+  catch { elevationMarkers = []; }
+  try { elevationClimbLabels = JSON.parse(localStorage.getItem(annotationsStorageKey('labels'))) || []; }
+  catch { elevationClimbLabels = []; }
+}
+
+function saveMarkers() { localStorage.setItem(annotationsStorageKey('markers'), JSON.stringify(elevationMarkers)); }
+function saveClimbLabels() { localStorage.setItem(annotationsStorageKey('labels'), JSON.stringify(elevationClimbLabels)); }
+
+function setAnnotationMode(mode) {
+  annotationMode = annotationMode === mode ? null : mode;
+  document.getElementById('flagAidStations').classList.toggle('on', annotationMode === 'markers');
+  document.getElementById('flagClimbLabels').classList.toggle('on', annotationMode === 'labels');
+  const hint = document.getElementById('annotationHint');
+  if (annotationMode === 'markers') { hint.hidden = false; hint.textContent = 'Clique no gráfico para adicionar um posto (PC = hidratação, PCA = alimentação). Clique num marcador existente para removê-lo.'; }
+  else if (annotationMode === 'labels') { hint.hidden = false; hint.textContent = 'Clique no gráfico para nomear uma subida ou morro. Clique numa marcação existente para removê-la.'; }
+  else hint.hidden = true;
+}
+
+function clearAnnotations() {
+  if (!elevationMarkers.length && !elevationClimbLabels.length) return;
+  if (!confirm('Remover todos os marcadores PC/PCA e nomes de subida deste gráfico?')) return;
+  elevationMarkers = [];
+  elevationClimbLabels = [];
+  saveMarkers();
+  saveClimbLabels();
+  drawElevation();
+}
+
+function toggleElevationFullscreen() {
+  const card = document.querySelector('.elevation-card');
+  if (!card) return;
+  if (!document.fullscreenElement) card.requestFullscreen?.();
+  else document.exitFullscreen?.();
+}
+
+function bindAnnotationControls() {
+  if (annotationsBound) return;
+  annotationsBound = true;
+  document.getElementById('flagAidStations').addEventListener('click', () => setAnnotationMode('markers'));
+  document.getElementById('flagClimbLabels').addEventListener('click', () => setAnnotationMode('labels'));
+  document.getElementById('elevationFullscreen').addEventListener('click', toggleElevationFullscreen);
+  document.getElementById('clearAnnotations').addEventListener('click', clearAnnotations);
+  document.addEventListener('fullscreenchange', () => {
+    const card = document.querySelector('.elevation-card');
+    if (!card) return;
+    card.classList.toggle('is-fullscreen', document.fullscreenElement === card);
+    setTimeout(drawElevation, 60);
+  });
+}
+
 function setupElevationAnalysis() {
   const startInput = document.getElementById('segmentStart');
   const endInput = document.getElementById('segmentEnd');
@@ -483,6 +543,8 @@ function setupElevationAnalysis() {
   startInput.value = '0';
   endInput.value = end.toFixed(2);
   document.getElementById('segmentAnalyze').onclick = () => analyzeSegment(Number(startInput.value), Number(endInput.value));
+  loadAnnotations();
+  bindAnnotationControls();
   renderAutomaticSplits();
   analyzeSegment(0, end, { focusElevation: false });
 }
@@ -531,7 +593,50 @@ function drawElevation() {
   gradient.addColorStop(0, 'rgba(63,185,80,.25)'); gradient.addColorStop(1, 'rgba(63,185,80,.02)');
   ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.lineTo(x(points.at(-1).d), height - padding.b); ctx.lineTo(x(points[0].d), height - padding.b); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
   ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
+  elevationMarkers.filter((marker) => marker.distance >= minD && marker.distance <= maxD).forEach((marker) => {
+    const markerX = x(marker.distance);
+    const color = marker.type === 'PCA' ? '#f0883e' : '#58a6ff';
+    ctx.strokeStyle = color; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(markerX, padding.t); ctx.lineTo(markerX, height - padding.b); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText(marker.label || marker.type, markerX, padding.t - 6);
+  });
+  elevationClimbLabels.filter((label) => label.distance >= minD && label.distance <= maxD).forEach((label) => {
+    const labelX = x(label.distance);
+    const labelY = y(label.elevation);
+    ctx.strokeStyle = 'rgba(188,140,255,.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(labelX, labelY); ctx.lineTo(labelX, labelY - 26); ctx.stroke();
+    ctx.fillStyle = '#bc8cff'; ctx.beginPath(); ctx.arc(labelX, labelY, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center'; ctx.fillText(label.text, labelX, labelY - 30);
+  });
   const tooltip = document.getElementById('ctt');
+  canvas.onclick = (event) => {
+    if (!annotationMode) return;
+    const bounds = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - bounds.left;
+    const distance = minD + ((mouseX - padding.l) / chartWidth) * (maxD - minD);
+    if (distance < minD || distance > maxD) return;
+    const point = points.reduce((closest, candidate) => Math.abs(candidate.d - distance) < Math.abs(closest.d - distance) ? candidate : closest);
+    if (annotationMode === 'markers') {
+      const existing = elevationMarkers.find((marker) => Math.abs(x(marker.distance) - mouseX) < 10);
+      if (existing) { elevationMarkers = elevationMarkers.filter((marker) => marker !== existing); saveMarkers(); drawElevation(); return; }
+      const label = prompt('Nome do posto (ex.: PC1 para hidratação, PCA1 para alimentação):', 'PC');
+      if (!label) return;
+      const type = /pca/i.test(label) ? 'PCA' : 'PC';
+      elevationMarkers.push({ distance: point.d, type, label });
+      saveMarkers();
+      drawElevation();
+    } else if (annotationMode === 'labels') {
+      const existing = elevationClimbLabels.find((item) => Math.abs(x(item.distance) - mouseX) < 10);
+      if (existing) { elevationClimbLabels = elevationClimbLabels.filter((item) => item !== existing); saveClimbLabels(); drawElevation(); return; }
+      const text = prompt('Nome da subida ou morro:', '');
+      if (!text) return;
+      elevationClimbLabels.push({ distance: point.d, elevation: point.e, text });
+      saveClimbLabels();
+      drawElevation();
+    }
+  };
   canvas.onmousemove = (event) => {
     const bounds = canvas.getBoundingClientRect();
     const mouseX = event.clientX - bounds.left;
