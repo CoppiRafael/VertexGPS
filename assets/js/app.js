@@ -11,12 +11,9 @@ let cumulativeGain = [];
 let cumulativeLoss = [];
 let zS = 0;
 let zE = 0;
-let rawRoutePoints = [];
 let autoSectors = [];
 let customSectors = [];
 let sectorNotes = {};
-let currentBriefingId = null;
-let pendingBriefingOverrides = null;
 let hasLoadedGpx = false;
 let activityAnalysis = null;
 let targetProjection = null;
@@ -61,7 +58,6 @@ function smoothElevation(points) {
 
 function buildAnalysis(rawPoints, fileName) {
   targetProjection = null;
-  rawRoutePoints = rawPoints.map((point) => ({ la: point.la, lo: point.lo, e: point.e, t: point.t || null, breakBefore: Boolean(point.breakBefore) }));
   const missingElevation = rawPoints.filter((point) => !Number.isFinite(point.e)).length;
   const elevationJumps = rawPoints.slice(1).filter((point, index) => Number.isFinite(point.e) && Number.isFinite(rawPoints[index].e) && Math.abs(point.e - rawPoints[index].e) > 30).length;
   const hasElevation = rawPoints.some((point) => Number.isFinite(point.e));
@@ -966,7 +962,6 @@ function initStrategy() {
 function renderRoute() {
   zS = 0; zE = metrics.distance;
   renderSummary(); renderTopThree(); renderZoom(); setupElevationAnalysis(); initMap(); initSplits(); drawGradients(); renderGradientDetail(); renderLoadSummary(); initStrategy();
-  if (pendingBriefingOverrides) { applyOverrides(pendingBriefingOverrides); pendingBriefingOverrides = null; }
   renderBriefing();
   renderInsights();
   renderActivity();
@@ -995,10 +990,8 @@ async function loadGpx(file) {
   if (!file.name.toLowerCase().endsWith('.gpx')) { status.textContent = 'Escolha um arquivo com extensão .gpx.'; return; }
   status.textContent = `Processando ${file.name}…`;
   try {
-    currentBriefingId = null;
     customSectors = [];
     sectorNotes = {};
-    pendingBriefingOverrides = null;
     activityAnalysis = null;
     hasLoadedGpx = true;
     buildAnalysis(parseGpx(await file.text()), file.name);
@@ -1045,32 +1038,6 @@ function setupTabs() {
       if (id === 'geral') setTimeout(() => routeMap.invalidateSize(), 0);
     });
     navigation.appendChild(button);
-  });
-}
-
-const BRIEFING_DB = 'vertex-gps-briefings';
-const BRIEFING_STORE = 'briefings';
-
-function briefingDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(BRIEFING_DB, 1);
-    request.onupgradeneeded = () => {
-      const store = request.result.createObjectStore(BRIEFING_STORE, { keyPath: 'id' });
-      store.createIndex('updatedAt', 'updatedAt');
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function briefingStore(action, value) {
-  const db = await briefingDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(BRIEFING_STORE, 'readwrite');
-    const store = transaction.objectStore(BRIEFING_STORE);
-    const request = action === 'list' ? store.getAll() : action === 'get' ? store.get(value) : action === 'delete' ? store.delete(value) : store.put(value);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -1161,59 +1128,269 @@ function addCustomSector() {
   renderBriefing();
 }
 
+function drawRouteSketch(canvas, width, height) {
+  const scale = 2;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#0b1710';
+  ctx.fillRect(0, 0, width, height);
+  const padding = 22;
+  const lats = P.map((point) => point.la);
+  const lons = P.map((point) => point.lo);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons);
+  const maxLon = Math.max(...lons);
+  const midLat = (minLat + maxLat) / 2;
+  const lonScale = Math.cos((midLat * Math.PI) / 180);
+  const spanW = Math.max(1e-6, (maxLon - minLon) * lonScale);
+  const spanH = Math.max(1e-6, maxLat - minLat);
+  const boxW = width - padding * 2;
+  const boxH = height - padding * 2;
+  const fit = Math.min(boxW / spanW, boxH / spanH);
+  const drawW = spanW * fit;
+  const drawH = spanH * fit;
+  const offsetX = padding + (boxW - drawW) / 2;
+  const offsetY = padding + (boxH - drawH) / 2;
+  const x = (lon) => offsetX + (lon - minLon) * lonScale * fit;
+  const y = (lat) => offsetY + drawH - (lat - minLat) * fit;
+  const trace = (color, lineWidth) => {
+    ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    P.forEach((point, index) => { const px = x(point.lo); const py = y(point.la); if (!index) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+    ctx.stroke();
+  };
+  trace('rgba(180,66,0,.22)', 9);
+  trace('#e0672b', 3);
+  const dot = (point, color) => {
+    ctx.beginPath(); ctx.fillStyle = color; ctx.arc(x(point.lo), y(point.la), 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#0b1710'; ctx.lineWidth = 1.5; ctx.stroke();
+  };
+  dot(P[0], '#3fb950');
+  dot(P.at(-1), '#f85149');
+  dot(P.reduce((highest, point) => (point.e > highest.e ? point : highest)), '#e3b341');
+}
+
+function drawElevationForReport(canvas, width, height) {
+  const scale = 2;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#0b1710';
+  ctx.fillRect(0, 0, width, height);
+  const padding = { t: 20, r: 16, b: 30, l: 50 };
+  const chartWidth = width - padding.l - padding.r;
+  const chartHeight = height - padding.t - padding.b;
+  const points = P;
+  const minD = points[0].d;
+  const maxD = points.at(-1).d;
+  const minE = Math.min(...points.map((point) => point.e)) - 15;
+  const maxE = Math.max(...points.map((point) => point.e)) + 15;
+  const x = (distance) => padding.l + ((distance - minD) / Math.max(1, maxD - minD)) * chartWidth;
+  const y = (elevation) => padding.t + chartHeight - ((elevation - minE) / Math.max(1, maxE - minE)) * chartHeight;
+  const elevationStep = maxE - minE > 300 ? 100 : maxE - minE > 100 ? 50 : 20;
+  for (let elevation = Math.ceil(minE / elevationStep) * elevationStep; elevation <= maxE; elevation += elevationStep) {
+    ctx.strokeStyle = '#21262d'; ctx.beginPath(); ctx.moveTo(padding.l, y(elevation)); ctx.lineTo(width - padding.r, y(elevation)); ctx.stroke();
+    ctx.fillStyle = '#8a978d'; ctx.font = '10px Helvetica'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 8, y(elevation) + 3);
+  }
+  const gradient = ctx.createLinearGradient(0, padding.t, 0, height - padding.b);
+  gradient.addColorStop(0, 'rgba(63,185,80,.28)'); gradient.addColorStop(1, 'rgba(63,185,80,.02)');
+  ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.lineTo(x(points.at(-1).d), height - padding.b); ctx.lineTo(x(points[0].d), height - padding.b); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
+  ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
+  elevationMarkers.forEach((marker) => {
+    const markerX = x(marker.distance);
+    const color = marker.type === 'PCA' ? '#f0883e' : '#58a6ff';
+    ctx.strokeStyle = color; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(markerX, padding.t); ctx.lineTo(markerX, height - padding.b); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color; ctx.font = '10px Helvetica'; ctx.textAlign = 'center'; ctx.fillText(marker.label || marker.type, markerX, padding.t - 6);
+  });
+  elevationClimbLabels.forEach((label) => {
+    const labelX = x(label.distance);
+    const labelY = y(label.elevation);
+    ctx.strokeStyle = 'rgba(188,140,255,.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(labelX, labelY); ctx.lineTo(labelX, labelY - 26); ctx.stroke();
+    ctx.fillStyle = '#bc8cff'; ctx.beginPath(); ctx.arc(labelX, labelY, 2.8, 0, Math.PI * 2); ctx.fill();
+    ctx.font = '10px Helvetica'; ctx.textAlign = 'center'; ctx.fillText(label.text, labelX, labelY - 30);
+  });
+  ctx.fillStyle = '#8a978d'; ctx.font = '10px Helvetica'; ctx.textAlign = 'center';
+  const kmStep = Math.max(1, Math.round(metrics.distanceKm / 8));
+  for (let km = 0; km <= metrics.distanceKm; km += kmStep) ctx.fillText(`${km}km`, x(km * 1000), height - padding.b + 16);
+}
+
+function buildReportData() {
+  const profile = profileData();
+  const decisive = [...autoSectors].sort((a, b) => (b.g + b.l * .35) - (a.g + a.l * .35)).slice(0, 3);
+  const overrides = splitOverrides();
+  let accumulated = 0;
+  const splits = S.map((split, index) => {
+    const override = overrides[index] || { pace: suggestedPace(split), note: '' };
+    const segmentKm = Math.max(.01, (split.end - split.start) / 1000);
+    const seconds = paceSeconds(override.pace);
+    if (!Number.isNaN(seconds)) accumulated += seconds * segmentKm;
+    return { km: split.km, terrain: terrainFor(split), gain: split.g, loss: split.l, grade: split.ag, pace: override.pace, note: override.note, accumulated: Number.isNaN(seconds) ? null : accumulated };
+  });
+  const resolved = splits.filter((split) => split.accumulated !== null);
+  const totalSeconds = resolved.length ? resolved.at(-1).accumulated : 0;
+  const averagePace = metrics.distanceKm ? totalSeconds / metrics.distanceKm : 0;
+  const sectors = [...autoSectors.map((sector) => ({ ...sector, source: 'Automático' })), ...customSectors.map((sector) => ({ ...sector, source: 'Treinador' }))].map((sector) => ({
+    ...sector,
+    stats: sectorStats(sector),
+    decision: sectorDecision(sector),
+    note: sectorNotes[sector.id] || '',
+    name: sector.title || (sector.type === 'descent' ? 'Descida relevante' : 'Subida relevante'),
+  }));
+  return { profile, decisive, splits, totalSeconds, averagePace, sectors };
+}
+
+function sanitizeFileSegment(value) {
+  return (value || '').replace(/[\\/:*?"<>|]+/g, '-').trim();
+}
+
+function generateBriefingReport() {
+  if (!metrics) return;
+  const data = buildReportData();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 16;
+  const contentWidth = pageWidth - margin * 2;
+  const athlete = data.profile.athleteName || 'Atleta';
+  const goalLine = data.profile.goalTime ? `Meta: ${data.profile.goalTime}` : 'Sem tempo-alvo definido';
+  const polesLine = data.profile.usesPoles ? 'Bastões incluídos na estratégia.' : 'Estratégia sem bastões.';
+
+  // Página 1 — capa
+  doc.setFillColor(3, 7, 5); doc.rect(0, 0, pageWidth, pageHeight, 'F');
+  doc.setTextColor(86, 206, 121); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+  doc.text('VERTEX GPS · BRIEFING DE PROVA', margin, 22);
+  doc.setTextColor(255, 255, 255); doc.setFontSize(26);
+  doc.text(athlete, margin, 34);
+  doc.setTextColor(166, 184, 170); doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
+  doc.text(`${data.profile.eventName || metrics.fileName}${data.profile.eventDate ? ' · ' + data.profile.eventDate : ''}`, margin, 42);
+  doc.text(goalLine, margin, 48);
+
+  const tiles = [
+    ['Distância', `${decimal.format(metrics.distanceKm)} km`],
+    ['D+ acumulado', `${number.format(metrics.gain)} m`],
+    ['Esforço estimado', `${decimal.format(metrics.effort)} km-e`],
+    ['Setores decisivos', `${data.decisive.length}`],
+  ];
+  const tileWidth = contentWidth / tiles.length;
+  tiles.forEach(([label, value], index) => {
+    const tx = margin + index * tileWidth;
+    doc.setTextColor(101, 125, 107); doc.setFontSize(8); doc.text(label.toUpperCase(), tx, 58);
+    doc.setTextColor(86, 206, 121); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+    doc.text(value, tx, 65);
+    doc.setFont('helvetica', 'normal');
+  });
+
+  doc.setTextColor(166, 184, 170); doc.setFontSize(10);
+  const summaryLines = doc.splitTextToSize(`${polesLine} Nível técnico: ${data.profile.technicalLevel}. O foco deve estar em chegar aos setores críticos com margem de esforço e atenção técnica.`, contentWidth);
+  doc.text(summaryLines, margin, 74);
+
+  const sketchCanvas = document.createElement('canvas');
+  const sketchW = 900; const sketchH = 520;
+  drawRouteSketch(sketchCanvas, sketchW, sketchH);
+  const imgW = contentWidth;
+  const imgH = imgW * (sketchH / sketchW);
+  doc.addImage(sketchCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, 86, imgW, Math.min(imgH, pageHeight - 96));
+
+  // Página 2 — perfil altimétrico completo
+  doc.addPage();
+  doc.setFillColor(255, 255, 255); doc.rect(0, 0, pageWidth, pageHeight, 'F');
+  doc.setTextColor(18, 55, 34); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+  doc.text('PERFIL ALTIMÉTRICO COMPLETO', margin, 18);
+  doc.setTextColor(20, 20, 20); doc.setFontSize(16);
+  doc.text(`${metrics.fileName} · ${decimal.format(metrics.distanceKm)} km`, margin, 27);
+
+  const elevationCanvas = document.createElement('canvas');
+  const elevW = 1000; const elevH = 460;
+  drawElevationForReport(elevationCanvas, elevW, elevH);
+  const elevImgW = contentWidth;
+  const elevImgH = elevImgW * (elevH / elevW);
+  doc.addImage(elevationCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, 34, elevImgW, elevImgH);
+
+  const extremes = [
+    ['Ponto mais alto', `${number.format(metrics.maxElevation)} m`, [63, 185, 80]],
+    ['Ponto mais baixo', `${number.format(metrics.minElevation)} m`, [88, 166, 255]],
+    ['Amplitude', `${number.format(metrics.range)} m`, [230, 150, 40]],
+    ['Carga vertical', `${number.format(metrics.vertical)} m D+/km`, [180, 66, 0]],
+  ];
+  const extY = 34 + elevImgH + 12;
+  const extWidth = contentWidth / extremes.length;
+  extremes.forEach(([label, value, color], index) => {
+    const ex = margin + index * extWidth;
+    doc.setTextColor(101, 101, 101); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+    doc.text(label.toUpperCase(), ex, extY);
+    doc.setTextColor(...color); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+    doc.text(value, ex, extY + 7);
+  });
+
+  // Página 3(+) — splits por km
+  doc.addPage();
+  doc.setTextColor(18, 55, 34); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+  doc.text('SPLITS POR KM · PROJEÇÃO DO TREINADOR', margin, 18);
+  doc.autoTable({
+    startY: 24,
+    margin: { left: margin, right: margin },
+    styles: { fontSize: 8, cellPadding: 2.2, textColor: [30, 30, 30] },
+    headStyles: { fillColor: [18, 55, 34], textColor: [255, 255, 255], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [244, 247, 244] },
+    head: [['Km', 'Terreno', 'D+', 'D-', 'Grade', 'Pace (projeção)', 'Acumulado', 'Nota do treinador']],
+    body: data.splits.map((split) => [
+      split.km,
+      split.terrain,
+      `+${split.gain}m`,
+      `-${split.loss}m`,
+      `${split.grade >= 0 ? '+' : ''}${split.grade.toFixed(1)}%`,
+      split.pace,
+      split.accumulated !== null ? timeLabel(split.accumulated) : '-',
+      split.note || '-',
+    ]),
+  });
+  const afterTableY = doc.lastAutoTable.finalY + 10;
+  doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+  doc.text(`Tempo do plano: ${timeLabel(data.totalSeconds)}`, margin, afterTableY);
+  doc.text(`Pace médio: ${formatPace(data.averagePace)}/km`, margin + contentWidth / 2, afterTableY);
+
+  // Última página — setores e decisões
+  doc.addPage();
+  doc.setTextColor(18, 55, 34); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+  doc.text('SETORES E DECISÕES · PLANO DE EXECUÇÃO', margin, 18);
+  let cursorY = 26;
+  data.sectors.forEach((sector, index) => {
+    if (cursorY > pageHeight - 30) { doc.addPage(); cursorY = 18; }
+    doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(`${String(index + 1).padStart(2, '0')} · ${sector.name} (${sector.source})`, margin, cursorY);
+    cursorY += 5;
+    doc.setTextColor(101, 101, 101); doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+    doc.text(`Km ${(sector.start / 1000).toFixed(1)}-${(sector.end / 1000).toFixed(1)} · ${sector.stats.length.toFixed(1)} km · +${number.format(sector.g || 0)} m · -${number.format(sector.l || 0)} m`, margin, cursorY);
+    cursorY += 6;
+    doc.setTextColor(30, 30, 30);
+    const decisionLines = doc.splitTextToSize(sector.decision, contentWidth);
+    doc.text(decisionLines, margin, cursorY);
+    cursorY += decisionLines.length * 4.5 + 2;
+    if (sector.note) {
+      doc.setTextColor(180, 66, 0); doc.setFont('helvetica', 'italic');
+      const noteLines = doc.splitTextToSize(`Nota do treinador: ${sector.note}`, contentWidth);
+      doc.text(noteLines, margin, cursorY);
+      cursorY += noteLines.length * 4.5;
+    }
+    cursorY += 6;
+  });
+
+  const filename = `Briefing-${sanitizeFileSegment(athlete) || 'Atleta'}-${sanitizeFileSegment(data.profile.eventName || metrics.fileName)}.pdf`;
+  doc.save(filename);
+}
+
 function setupCoachControls() {
   document.getElementById('saveCustomSector').onclick = addCustomSector;
   ['athleteName', 'eventName', 'eventDate', 'goalTime', 'technicalLevel', 'usesPoles'].forEach((id) => document.getElementById(id).addEventListener('input', renderBriefing));
-  document.getElementById('saveBriefing').onclick = saveBriefing;
-  document.getElementById('newBriefing').onclick = newBriefing;
-}
-
-async function saveBriefing() {
-  const profile = profileData();
-  const now = new Date().toISOString();
-  const record = { id: currentBriefingId || crypto.randomUUID(), createdAt: currentBriefingId ? undefined : now, updatedAt: now, profile, route: { fileName: metrics.fileName, points: rawRoutePoints }, customSectors, sectorNotes, overrides: splitOverrides() };
-  if (currentBriefingId) {
-    const previous = await briefingStore('get', currentBriefingId);
-    record.createdAt = previous?.createdAt || now;
-  }
-  await briefingStore('put', record);
-  currentBriefingId = record.id;
-  document.getElementById('libraryStatus').textContent = 'Briefing salvo localmente.';
-  renderLibrary();
-}
-
-async function renderLibrary() {
-  const records = (await briefingStore('list')).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const container = document.getElementById('briefingLibrary');
-  container.innerHTML = records.length ? records.map((record) => `<article class="library-item"><div><strong>${record.profile.eventName || record.route.fileName}</strong><span>${record.profile.athleteName || 'Sem atleta'} · atualizado ${new Date(record.updatedAt).toLocaleDateString('pt-BR')}</span></div><div><button data-open="${record.id}">Abrir</button><button data-delete="${record.id}" class="danger">Excluir</button></div></article>`).join('') : '<p class="empty-state">Nenhum briefing salvo neste dispositivo.</p>';
-  container.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => loadBriefing(button.dataset.open)));
-  container.querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', async () => { if (confirm('Excluir este briefing local?')) { await briefingStore('delete', button.dataset.delete); if (currentBriefingId === button.dataset.delete) currentBriefingId = null; renderLibrary(); } }));
-}
-
-async function loadBriefing(id) {
-  const record = await briefingStore('get', id);
-  if (!record) return;
-  currentBriefingId = record.id;
-  hasLoadedGpx = true;
-  document.body.classList.add('has-route');
-  customSectors = record.customSectors || [];
-  sectorNotes = record.sectorNotes || {};
-  populateProfile(record.profile);
-  pendingBriefingOverrides = record.overrides || [];
-  buildAnalysis(record.route.points, record.route.fileName);
-  setupTabs();
-  renderRoute();
-  document.getElementById('libraryStatus').textContent = 'Briefing aberto.';
-}
-
-function newBriefing() {
-  currentBriefingId = null;
-  customSectors = [];
-  sectorNotes = {};
-  pendingBriefingOverrides = null;
-  populateProfile();
-  renderRoute();
-  document.getElementById('libraryStatus').textContent = 'Novo briefing não salvo.';
+  document.getElementById('exportBriefingReport').onclick = generateBriefingReport;
 }
 
 function setupTabs() {
