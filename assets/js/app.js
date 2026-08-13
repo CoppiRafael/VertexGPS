@@ -230,15 +230,6 @@ function renderSummary() {
   document.getElementById('routeType').textContent = metrics.isLoop ? 'Rota circular' : 'Rota linear';
   document.getElementById('elevationStatus').textContent = metrics.hasElevation ? 'Altimetria disponível' : 'Sem elevação no arquivo';
   document.getElementById('mapFooter').innerHTML = `<span>${decimal.format(metrics.distanceKm)} km</span><span>${number.format(metrics.gain)} m D+</span><span>fechamento: ${number.format(metrics.startEndDistance)} m</span>`;
-
-  const mainClimb = [...S].sort((a, b) => b.g - a.g)[0];
-  const insights = [
-    ['Carga vertical', `${number.format(metrics.vertical)} m de subida por quilômetro.`],
-    ['Amplitude altimétrica', `${number.format(metrics.range)} m entre ${number.format(metrics.minElevation)} m e ${number.format(metrics.maxElevation)} m.`],
-    ['Geometria da rota', metrics.isLoop ? `A chegada fica a ${number.format(metrics.startEndDistance)} m da largada: circuito.` : `A chegada fica a ${number.format(metrics.startEndDistance)} m da largada: rota linear.`],
-    ['Trecho decisivo', mainClimb ? `Km ${mainClimb.km}: +${mainClimb.g} m, média de ${mainClimb.ag.toFixed(1)}%.` : 'Dados insuficientes para destacar um setor.'],
-  ];
-  document.getElementById('routeInsights').innerHTML = `<div class="side-eye">Leitura rápida</div><div class="side-title">Resumo do desafio</div>${insights.map(([title, description], index) => `<div class="side-item"><div class="si-num">0${index + 1}</div><div class="si-title">${title}</div><div class="si-desc">${description}</div></div>`).join('')}`;
 }
 
 function renderTopThree() {

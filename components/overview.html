@@ -1,17 +1,14 @@
 <div id="tab-geral" class="tpan on">
-  <div class="two-col">
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <div><div class="card-eye">Traçado GPS</div><div class="card-title" style="margin-bottom:0">Mapa técnico da rota</div></div>
-        <span class="card-badge">Interativo</span>
-      </div>
-      <div id="map"></div>
-      <div class="map-footer" id="mapFooter"><span>Carregue um GPX para ver os dados da rota.</span></div>
-      <section class="map-elevation" aria-labelledby="mapElevationTitle">
-        <div class="map-elevation-head"><div><div class="card-eye">Altimetria sincronizada</div><div class="map-elevation-title" id="mapElevationTitle">Perfil completo da rota</div></div><span>passe o cursor no mapa</span></div>
-        <div class="chart-wrap map-elevation-chart"><canvas id="mapElevationC" height="150" aria-label="Perfil altimétrico sincronizado ao mapa"></canvas></div>
-        <div class="map-elevation-info" id="mapElevationInfo" aria-live="polite"><span>Mova o cursor sobre o mapa para inspecionar um ponto da rota.</span></div>
-      </section>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div><div class="card-eye">Traçado GPS</div><div class="card-title" style="margin-bottom:0">Mapa técnico da rota</div></div>
+      <span class="card-badge">Interativo</span>
     </div>
-    <aside class="side-card" id="routeInsights"></aside>
+    <div id="map"></div>
+    <div class="map-footer" id="mapFooter"><span>Carregue um GPX para ver os dados da rota.</span></div>
+    <section class="map-elevation" aria-labelledby="mapElevationTitle">
+      <div class="map-elevation-head"><div><div class="card-eye">Altimetria sincronizada</div><div class="map-elevation-title" id="mapElevationTitle">Perfil completo da rota</div></div><span>passe o cursor no mapa</span></div>
+      <div class="chart-wrap map-elevation-chart"><canvas id="mapElevationC" height="150" aria-label="Perfil altimétrico sincronizado ao mapa"></canvas></div>
+      <div class="map-elevation-info" id="mapElevationInfo" aria-live="polite"><span>Mova o cursor sobre o mapa para inspecionar um ponto da rota.</span></div>
+    </section>
   </div>
