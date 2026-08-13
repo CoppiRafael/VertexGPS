@@ -10,6 +10,20 @@
         <p>Informe o tempo final desejado e aplique uma projeção por km baseada nos dados do GPX.</p>
       </div>
       <div class="projection-controls">
+        <div class="model-select">
+          <label for="projectionModel">Base de cálculo
+            <button type="button" class="info-tip" aria-label="Como funciona cada modelo de cálculo">?
+              <span class="tooltip-bubble">
+                <strong>Perfil ponderado:</strong> distribui a meta pelos km conforme relevo, variabilidade de gradiente e pico de cada trecho — modelo herdado, sem base física.<br><br>
+                <strong>GAP + fadiga acumulada:</strong> converte cada km numa distância equivalente em plano usando o custo metabólico real de subir/descer (curva de Minetti), depois aplica um fator de fadiga que cresce com a distância e o D+ já percorridos — os últimos km saem mais lentos que os primeiros, como numa prova real.
+              </span>
+            </button>
+          </label>
+          <select id="projectionModel">
+            <option value="weighted" selected>Perfil ponderado</option>
+            <option value="gap-fatigue">GAP + fadiga acumulada</option>
+          </select>
+        </div>
         <label for="targetFinishTime">Tempo objetivo <input id="targetFinishTime" type="text" inputmode="numeric" autocomplete="off" placeholder="1:30:00" aria-describedby="targetTimeHelp"></label>
         <button id="applyTargetProjection" type="button">Projetar splits</button>
         <button id="resetTargetProjection" class="secondary" type="button">Restaurar referência</button>

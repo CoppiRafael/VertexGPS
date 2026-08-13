@@ -712,12 +712,16 @@ function standardDeviation(values) {
   return Math.sqrt(values.reduce((sum, value) => sum + (value - average) ** 2, 0) / values.length);
 }
 
+function splitGradeDeviation(split) {
+  const grades = G.filter((sample) => sample.d * 1000 >= split.start && sample.d * 1000 <= split.end).map((sample) => sample.g);
+  return standardDeviation(grades.length ? grades : [split.ag]);
+}
+
 function splitProjectionProfile(split) {
   const distanceKm = Math.max(.01, (split.end - split.start) / 1000);
   const points = P.filter((point) => point.d >= split.start && point.d <= split.end);
-  const grades = G.filter((sample) => sample.d * 1000 >= split.start && sample.d * 1000 <= split.end).map((sample) => sample.g);
   const elevationDeviation = standardDeviation(points.map((point) => point.e));
-  const gradeDeviation = standardDeviation(grades.length ? grades : [split.ag]);
+  const gradeDeviation = splitGradeDeviation(split);
   const metres = distanceKm * 1000;
   const climbRatio = split.g / metres;
   const descentRatio = split.l / metres;
@@ -745,6 +749,41 @@ function buildTargetProjection(targetSeconds) {
   return { targetSeconds, profiles: projected, paces: roundedPaces };
 }
 
+function minettiCost(gradePercent) {
+  const i = gradePercent / 100;
+  return 155.4 * i ** 5 - 30.4 * i ** 4 - 43.3 * i ** 3 + 46.3 * i ** 2 + 19.5 * i + 3.6;
+}
+
+const FLAT_RUNNING_COST = minettiCost(0);
+
+function fatigueFactor(distanceRatio, gainRatio) {
+  return 1 + distanceRatio * .16 + gainRatio * .22;
+}
+
+function buildGapFatigueProjection(targetSeconds) {
+  let cumulativeDistanceKm = 0;
+  let cumulativeGain = 0;
+  const profiles = S.map((split) => {
+    const distanceKm = Math.max(.01, (split.end - split.start) / 1000);
+    const costRatio = Math.max(.6, minettiCost(split.ag) / FLAT_RUNNING_COST);
+    const equivalentKm = distanceKm * costRatio;
+    const midDistanceKm = cumulativeDistanceKm + distanceKm / 2;
+    const midGain = cumulativeGain + split.g / 2;
+    cumulativeDistanceKm += distanceKm;
+    cumulativeGain += split.g;
+    const fatigue = fatigueFactor(midDistanceKm / metrics.distanceKm, midGain / Math.max(1, metrics.gain));
+    const coefficient = costRatio * fatigue;
+    return { split, distanceKm, gradeDeviation: splitGradeDeviation(split), coefficient, weight: equivalentKm * fatigue };
+  });
+  const totalWeight = profiles.reduce((sum, profile) => sum + profile.weight, 0);
+  const projected = profiles.map((profile) => ({ ...profile, duration: targetSeconds * profile.weight / totalWeight }));
+  const roundedPaces = projected.map((profile) => Math.max(1, Math.round(profile.duration / profile.distanceKm)));
+  const represented = roundedPaces.reduce((sum, pace, index) => sum + pace * projected[index].distanceKm, 0);
+  const correctionIndex = projected.length - 1;
+  roundedPaces[correctionIndex] = Math.max(1, roundedPaces[correctionIndex] + Math.round((targetSeconds - represented) / projected[correctionIndex].distanceKm));
+  return { targetSeconds, profiles: projected, paces: roundedPaces };
+}
+
 function renderProjectionSummary(projection) {
   const slowest = [...projection.profiles].sort((a, b) => b.duration / b.distanceKm - a.duration / a.distanceKm)[0];
   const mostVariable = [...projection.profiles].sort((a, b) => b.gradeDeviation - a.gradeDeviation)[0];
@@ -760,7 +799,8 @@ function applyTargetProjection() {
     input.focus();
     return;
   }
-  targetProjection = buildTargetProjection(targetSeconds);
+  const model = document.getElementById('projectionModel').value;
+  targetProjection = model === 'gap-fatigue' ? buildGapFatigueProjection(targetSeconds) : buildTargetProjection(targetSeconds);
   document.querySelectorAll('#sBody .pace-input').forEach((input, index) => { input.value = formatPace(targetProjection.paces[index]); });
   renderProjectionSummary(targetProjection);
   calcTotal();
