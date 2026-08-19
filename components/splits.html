@@ -1,8 +1,10 @@
 <div id="tab-splits" class="tpan">
-  <div class="card" style="margin-bottom:20px">
+  <div class="card splits-card">
+    <header class="splits-intro">
     <div class="card-eye">Plano por quilômetro</div>
     <div class="card-title">Splits, ritmo sugerido e anotações</div>
     <p style="font-size:12px;color:var(--tx2);margin-bottom:16px">A sugestão de ritmo acompanha o relevo. Registre pontos técnicos, estratégia, equipamento ou qualquer instrução de prova em cada km; suas notas ficam salvas neste navegador.</p>
+    </header>
     <section class="split-projection" aria-labelledby="projection-title">
       <div>
         <div class="projection-eye">Projeção matemática</div>
@@ -11,14 +13,15 @@
       </div>
       <div class="projection-controls">
         <div class="model-select">
-          <label for="projectionModel">Base de cálculo
+          <div class="projection-label-row">
+            <label for="projectionModel">Base de cálculo</label>
             <button type="button" class="info-tip" aria-label="Como funciona cada modelo de cálculo">?
               <span class="tooltip-bubble">
                 <strong>Perfil ponderado:</strong> distribui a meta pelos km conforme relevo, variabilidade de gradiente e pico de cada trecho — modelo herdado, sem base física.<br><br>
                 <strong>GAP + fadiga acumulada:</strong> converte cada km numa distância equivalente em plano usando o custo metabólico real de subir/descer (curva de Minetti), depois aplica um fator de fadiga que cresce com a distância e o D+ já percorridos — os últimos km saem mais lentos que os primeiros, como numa prova real.
               </span>
             </button>
-          </label>
+          </div>
           <select id="projectionModel">
             <option value="weighted" selected>Perfil ponderado</option>
             <option value="gap-fatigue">GAP + fadiga acumulada</option>

@@ -198,7 +198,7 @@ function terrainFor(split) {
   return 'Plano / ondulado';
 }
 
-const GRADE_HUES = { steepUp: '#f85149', up: '#f0883e', upLight: '#f0b45f', flat: '#a6b8aa', down: '#58a6ff', steepDown: '#4d7fc2' };
+const GRADE_HUES = { steepUp: '#c97062', up: '#cb8656', upLight: '#dfb07f', flat: '#c5c8bd', down: '#8eafbb', steepDown: '#668996' };
 
 function gradeColor(grade) {
   if (grade > 15) return GRADE_HUES.steepUp;
@@ -323,24 +323,24 @@ function drawMapElevationProfile(activeIndex = null) {
   [0, .5, 1].forEach((ratio) => {
     const elevation = minElevation + (maxElevation - minElevation) * ratio;
     const lineY = y(elevation);
-    ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, lineY); ctx.lineTo(width - padding.r, lineY); ctx.stroke();
-    ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 5, lineY + 3);
+    ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, lineY); ctx.lineTo(width - padding.r, lineY); ctx.stroke();
+    ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 5, lineY + 3);
   });
   const stride = Math.max(1, Math.ceil(P.length / 900));
   const profile = [];
   for (let index = 0; index < P.length; index += stride) profile.push(P[index]);
   if (profile.at(-1) !== P.at(-1)) profile.push(P.at(-1));
   const fill = ctx.createLinearGradient(0, padding.t, 0, height - padding.b);
-  fill.addColorStop(0, 'rgba(180,66,0,.36)'); fill.addColorStop(1, 'rgba(180,66,0,.02)');
+  fill.addColorStop(0, 'rgba(203,134,86,.32)'); fill.addColorStop(1, 'rgba(203,134,86,.02)');
   ctx.beginPath(); ctx.moveTo(x(profile[0].d), y(profile[0].e)); profile.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.lineTo(x(profile.at(-1).d), height - padding.b); ctx.lineTo(x(profile[0].d), height - padding.b); ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
-  ctx.strokeStyle = '#d65b19'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(x(profile[0].d), y(profile[0].e)); profile.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
-  ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'left'; ctx.fillText('0 km', padding.l, height - 7); ctx.textAlign = 'right'; ctx.fillText(`${metrics.distanceKm.toFixed(1)} km`, width - padding.r, height - 7);
+  ctx.strokeStyle = '#cb8656'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(x(profile[0].d), y(profile[0].e)); profile.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
+  ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'left'; ctx.fillText('0 km', padding.l, height - 7); ctx.textAlign = 'right'; ctx.fillText(`${metrics.distanceKm.toFixed(1)} km`, width - padding.r, height - 7);
   if (activeIndex !== null) {
     const point = P[activeIndex];
     const activeX = x(point.d); const activeY = y(point.e);
-    ctx.strokeStyle = 'rgba(245,212,191,.76)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(activeX, padding.t); ctx.lineTo(activeX, height - padding.b); ctx.stroke();
-    ctx.fillStyle = '#f5d4bf'; ctx.beginPath(); ctx.arc(activeX, activeY, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#b44200'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = 'rgba(233,229,219,.72)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(activeX, padding.t); ctx.lineTo(activeX, height - padding.b); ctx.stroke();
+    ctx.fillStyle = '#e9e5db'; ctx.beginPath(); ctx.arc(activeX, activeY, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#a56b47'; ctx.lineWidth = 2; ctx.stroke();
   }
   canvas.onmousemove = (event) => {
     const bounds = canvas.getBoundingClientRect();
@@ -369,16 +369,16 @@ function queueMapElevationFocus(latlng) {
 function initMap() {
   if (routeMap) routeMap.remove();
   routeMap = L.map('map', { zoomControl: true, attributionControl: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(routeMap);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(routeMap);
   const track = P.map((point) => [point.la, point.lo]);
-  L.polyline(track, { color: '#b44200', weight: 12, opacity: 0.18, lineCap: 'round', lineJoin: 'round', className: 'route-trace-glow' }).addTo(routeMap);
-  L.polyline(track, { color: '#b44200', weight: 4.5, opacity: 1, lineCap: 'round', lineJoin: 'round', className: 'route-trace-core' }).addTo(routeMap);
+  L.polyline(track, { color: '#a56b47', weight: 10, opacity: 0.16, lineCap: 'round', lineJoin: 'round', className: 'route-trace-glow' }).addTo(routeMap);
+  L.polyline(track, { color: '#cb8656', weight: 4, opacity: 1, lineCap: 'round', lineJoin: 'round', className: 'route-trace-core' }).addTo(routeMap);
   const start = P[0];
   const end = P.at(-1);
   const peak = P.reduce((highest, point) => point.e > highest.e ? point : highest);
-  L.circleMarker([start.la, start.lo], { radius: 8, color: '#3fb950', fillColor: '#3fb950', fillOpacity: 1, weight: 2 }).bindPopup(`<b>Início</b><br>${number.format(start.e)} m`).addTo(routeMap);
-  L.circleMarker([end.la, end.lo], { radius: 8, color: '#f85149', fillColor: '#f85149', fillOpacity: 1, weight: 2 }).bindPopup(`<b>Fim</b><br>${number.format(end.e)} m`).addTo(routeMap);
-  L.circleMarker([peak.la, peak.lo], { radius: 6, color: '#e3b341', fillColor: '#e3b341', fillOpacity: 1, weight: 2 }).bindPopup(`<b>Pico</b><br>${number.format(peak.e)} m`).addTo(routeMap);
+  L.circleMarker([start.la, start.lo], { radius: 8, color: '#a9b995', fillColor: '#a9b995', fillOpacity: 1, weight: 2 }).bindPopup(`<b>Início</b><br>${number.format(start.e)} m`).addTo(routeMap);
+  L.circleMarker([end.la, end.lo], { radius: 8, color: '#c97062', fillColor: '#c97062', fillOpacity: 1, weight: 2 }).bindPopup(`<b>Fim</b><br>${number.format(end.e)} m`).addTo(routeMap);
+  L.circleMarker([peak.la, peak.lo], { radius: 6, color: '#d1b36d', fillColor: '#d1b36d', fillOpacity: 1, weight: 2 }).bindPopup(`<b>Pico</b><br>${number.format(peak.e)} m`).addTo(routeMap);
   let nextKm = 1;
   P.forEach((point) => {
     if (point.d / 1000 >= nextKm && nextKm < Math.ceil(metrics.distanceKm)) {
@@ -387,7 +387,7 @@ function initMap() {
     }
   });
   routeMap.fitBounds(L.latLngBounds(track).pad(0.06));
-  mapElevationMarker = L.circleMarker([start.la, start.lo], { radius: 5, color: '#f5d4bf', fillColor: '#b44200', fillOpacity: 0, opacity: 0, weight: 2, interactive: false }).addTo(routeMap);
+  mapElevationMarker = L.circleMarker([start.la, start.lo], { radius: 5, color: '#e9e5db', fillColor: '#cb8656', fillOpacity: 0, opacity: 0, weight: 2, interactive: false }).addTo(routeMap);
   routeMap.on('mousemove', (event) => queueMapElevationFocus(event.latlng));
   drawMapElevationProfile();
 }
@@ -450,19 +450,19 @@ function drawVerticalLoadChart() {
   const chartHeight = height - padding.t - padding.b;
   const maxValue = Math.max(...S.flatMap((split) => [split.g, split.l]), 1);
   const middle = padding.t + chartHeight / 2;
-  ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, middle); ctx.lineTo(width - padding.r, middle); ctx.stroke();
+  ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, middle); ctx.lineTo(width - padding.r, middle); ctx.stroke();
   const slot = chartWidth / S.length;
   const barWidth = Math.max(3, slot * .32);
   S.forEach((split, index) => {
     const center = padding.l + index * slot + slot / 2;
     const upHeight = split.g / maxValue * chartHeight / 2;
     const downHeight = split.l / maxValue * chartHeight / 2;
-    ctx.fillStyle = '#f0883e'; ctx.fillRect(center - barWidth - 1, middle - upHeight, barWidth, upHeight);
-    ctx.fillStyle = '#58a6ff'; ctx.fillRect(center + 1, middle, barWidth, downHeight);
-    ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'center'; ctx.fillText(split.km, center, height - 12);
+    ctx.fillStyle = '#cb8656'; ctx.fillRect(center - barWidth - 1, middle - upHeight, barWidth, upHeight);
+    ctx.fillStyle = '#8eafbb'; ctx.fillRect(center + 1, middle, barWidth, downHeight);
+    ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'center'; ctx.fillText(split.km, center, height - 12);
   });
-  ctx.fillStyle = '#f0883e'; ctx.textAlign = 'left'; ctx.font = '9px JetBrains Mono'; ctx.fillText('D+', padding.l, 12);
-  ctx.fillStyle = '#58a6ff'; ctx.fillText('D−', padding.l + 30, 12);
+  ctx.fillStyle = '#cb8656'; ctx.textAlign = 'left'; ctx.font = '9px DM Mono'; ctx.fillText('D+', padding.l, 12);
+  ctx.fillStyle = '#8eafbb'; ctx.fillText('D−', padding.l + 30, 12);
 }
 
 function annotationsStorageKey(kind) {
@@ -573,29 +573,29 @@ function drawElevation() {
   ctx.clearRect(0, 0, width, height);
   const elevationStep = maxE - minE > 300 ? 100 : maxE - minE > 100 ? 50 : 20;
   for (let elevation = Math.ceil(minE / elevationStep) * elevationStep; elevation <= maxE; elevation += elevationStep) {
-    ctx.strokeStyle = '#21262d'; ctx.beginPath(); ctx.moveTo(padding.l, y(elevation)); ctx.lineTo(width - padding.r, y(elevation)); ctx.stroke();
-    ctx.fillStyle = '#484f58'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 6, y(elevation) + 3);
+    ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, y(elevation)); ctx.lineTo(width - padding.r, y(elevation)); ctx.stroke();
+    ctx.fillStyle = '#92998e'; ctx.font = '9px DM Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 6, y(elevation) + 3);
   }
   const gradient = ctx.createLinearGradient(0, padding.t, 0, height - padding.b);
-  gradient.addColorStop(0, 'rgba(63,185,80,.25)'); gradient.addColorStop(1, 'rgba(63,185,80,.02)');
+  gradient.addColorStop(0, 'rgba(169,185,149,.24)'); gradient.addColorStop(1, 'rgba(169,185,149,.02)');
   ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.lineTo(x(points.at(-1).d), height - padding.b); ctx.lineTo(x(points[0].d), height - padding.b); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
-  ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
+  ctx.strokeStyle = '#a9b995'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
   elevationMarkers.filter((marker) => marker.distance >= minD && marker.distance <= maxD).forEach((marker) => {
     const markerX = x(marker.distance);
-    const color = marker.type === 'PCA' ? '#f0883e' : '#58a6ff';
+    const color = marker.type === 'PCA' ? '#cb8656' : '#8eafbb';
     ctx.strokeStyle = color; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.3;
     ctx.beginPath(); ctx.moveTo(markerX, padding.t); ctx.lineTo(markerX, height - padding.b); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = color; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillStyle = color; ctx.font = '9px DM Mono'; ctx.textAlign = 'center';
     ctx.fillText(marker.label || marker.type, markerX, padding.t - 6);
   });
   elevationClimbLabels.filter((label) => label.distance >= minD && label.distance <= maxD).forEach((label) => {
     const labelX = x(label.distance);
     const labelY = y(label.elevation);
-    ctx.strokeStyle = 'rgba(188,140,255,.6)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(179,169,199,.6)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(labelX, labelY); ctx.lineTo(labelX, labelY - 26); ctx.stroke();
-    ctx.fillStyle = '#bc8cff'; ctx.beginPath(); ctx.arc(labelX, labelY, 2.6, 0, Math.PI * 2); ctx.fill();
-    ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center'; ctx.fillText(label.text, labelX, labelY - 30);
+    ctx.fillStyle = '#b3a9c7'; ctx.beginPath(); ctx.arc(labelX, labelY, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.font = '9px DM Mono'; ctx.textAlign = 'center'; ctx.fillText(label.text, labelX, labelY - 30);
   });
   const tooltip = document.getElementById('ctt');
   canvas.onclick = (event) => {
@@ -646,7 +646,7 @@ function initSplits() {
   S.forEach((split) => {
     const pace = suggestedPace(split);
     const row = document.createElement('tr');
-    row.innerHTML = `<td>${split.km}</td><td style="font-family:Inter;font-weight:400;color:var(--tx2);font-size:11px">${terrainFor(split)}</td><td class="up">+${split.g}m</td><td class="dn">−${split.l}m</td><td style="color:${gradeColor(split.ag)}">${split.ag >= 0 ? '+' : ''}${split.ag.toFixed(1)}%</td><td style="color:${gradeColor(split.mg)}">${split.mg >= 0 ? '+' : ''}${split.mg.toFixed(0)}%</td><td>${split.mn}–${split.mx}m</td><td style="color:#e3b341">${pace}</td><td><input type="text" value="${pace}"></td><td class="acum" style="color:var(--em)">—</td>`;
+    row.innerHTML = `<td>${split.km}</td><td style="font-family:var(--sans);font-weight:400;color:var(--tx2);font-size:11px">${terrainFor(split)}</td><td class="up">+${split.g}m</td><td class="dn">−${split.l}m</td><td style="color:${gradeColor(split.ag)}">${split.ag >= 0 ? '+' : ''}${split.ag.toFixed(1)}%</td><td style="color:${gradeColor(split.mg)}">${split.mg >= 0 ? '+' : ''}${split.mg.toFixed(0)}%</td><td>${split.mn}–${split.mx}m</td><td style="color:#d1b36d">${pace}</td><td><input type="text" value="${pace}"></td><td class="acum" style="color:var(--em)">—</td>`;
     row.querySelector('input').addEventListener('input', calcTotal);
     body.appendChild(row);
   });
@@ -675,7 +675,7 @@ function calcTotal() {
     total += seconds; accumulated.textContent = timeLabel(total);
   });
   const average = total / S.length;
-  document.getElementById('totBar').innerHTML = `<div class="tot"><div class="tot-l">Tempo estimado</div><div class="tot-v" style="color:var(--em)">${timeLabel(total)}</div></div><div class="tot"><div class="tot-l">Pace médio</div><div class="tot-v" style="color:#e3b341">${formatPace(average)}<span style="font-size:14px;color:var(--tx2)"> /km</span></div></div><div class="tot"><div class="tot-l">Base do cálculo</div><div class="tot-v" style="font-size:18px">${decimal.format(metrics.distanceKm)} km</div></div>`;
+  document.getElementById('totBar').innerHTML = `<div class="tot"><div class="tot-l">Tempo estimado</div><div class="tot-v" style="color:var(--em)">${timeLabel(total)}</div></div><div class="tot"><div class="tot-l">Pace médio</div><div class="tot-v" style="color:#d1b36d">${formatPace(average)}<span style="font-size:14px;color:var(--tx2)"> /km</span></div></div><div class="tot"><div class="tot-l">Base do cálculo</div><div class="tot-v" style="font-size:18px">${decimal.format(metrics.distanceKm)} km</div></div>`;
 }
 
 function notesStorageKey() {
@@ -821,7 +821,7 @@ function initSplits() {
   S.forEach((split) => {
     const pace = suggestedPace(split);
     const row = document.createElement('tr');
-    row.innerHTML = `<td>${split.km}</td><td style="font-family:Inter;font-weight:400;color:var(--tx2);font-size:11px">${terrainFor(split)}</td><td class="up">+${split.g}m</td><td class="dn">−${split.l}m</td><td style="color:${gradeColor(split.ag)}">${split.ag >= 0 ? '+' : ''}${split.ag.toFixed(1)}%</td><td style="color:${gradeColor(split.mg)}">${split.mg >= 0 ? '+' : ''}${split.mg.toFixed(0)}%</td><td>${split.mn}–${split.mx}m</td><td style="color:#e3b341">${pace}</td><td><input class="pace-input" type="text" value="${pace}" aria-label="Pace do km ${split.km}"></td><td class="acum" style="color:var(--em)">—</td>`;
+    row.innerHTML = `<td>${split.km}</td><td style="font-family:var(--sans);font-weight:400;color:var(--tx2);font-size:11px">${terrainFor(split)}</td><td class="up">+${split.g}m</td><td class="dn">−${split.l}m</td><td style="color:${gradeColor(split.ag)}">${split.ag >= 0 ? '+' : ''}${split.ag.toFixed(1)}%</td><td style="color:${gradeColor(split.mg)}">${split.mg >= 0 ? '+' : ''}${split.mg.toFixed(0)}%</td><td>${split.mn}–${split.mx}m</td><td style="color:#d1b36d">${pace}</td><td><input class="pace-input" type="text" value="${pace}" aria-label="Pace do km ${split.km}"></td><td class="acum" style="color:var(--em)">—</td>`;
     const noteCell = document.createElement('td');
     const noteInput = document.createElement('input');
     noteInput.className = 'note-input';
@@ -853,9 +853,9 @@ function calcTotal() {
     accumulated.textContent = timeLabel(total);
   });
   const average = total / metrics.distanceKm;
-  const target = targetProjection ? `<div class="tot"><div class="tot-l">Meta escolhida</div><div class="tot-v" style="color:#f1b18d">${timeLabel(targetProjection.targetSeconds)}</div></div>` : '';
+  const target = targetProjection ? `<div class="tot"><div class="tot-l">Meta escolhida</div><div class="tot-v" style="color:#ecc3a4">${timeLabel(targetProjection.targetSeconds)}</div></div>` : '';
   const adjustment = targetProjection?.isAdjusted ? ' ajustado manualmente' : '';
-  document.getElementById('totBar').innerHTML = `<div class="tot"><div class="tot-l">Tempo do plano${adjustment}</div><div class="tot-v" style="color:var(--em)">${timeLabel(total)}</div></div>${target}<div class="tot"><div class="tot-l">Pace médio</div><div class="tot-v" style="color:#e3b341">${formatPace(average)}<span style="font-size:14px;color:var(--tx2)"> /km</span></div></div><div class="tot"><div class="tot-l">Base do cálculo</div><div class="tot-v" style="font-size:18px">${decimal.format(metrics.distanceKm)} km</div></div>`;
+  document.getElementById('totBar').innerHTML = `<div class="tot"><div class="tot-l">Tempo do plano${adjustment}</div><div class="tot-v" style="color:var(--em)">${timeLabel(total)}</div></div>${target}<div class="tot"><div class="tot-l">Pace médio</div><div class="tot-v" style="color:#d1b36d">${formatPace(average)}<span style="font-size:14px;color:var(--tx2)"> /km</span></div></div><div class="tot"><div class="tot-l">Base do cálculo</div><div class="tot-v" style="font-size:18px">${decimal.format(metrics.distanceKm)} km</div></div>`;
 }
 
 function drawGradients() {
@@ -868,7 +868,7 @@ function drawGradients() {
     if (gradient.g > 15) categories.strongUp += 1; else if (gradient.g > 5) categories.up += 1; else if (gradient.g > -5) categories.flat += 1; else if (gradient.g > -10) categories.down += 1; else categories.strongDown += 1;
   });
   const labels = [['Subida forte >15%', categories.strongUp, 'var(--red)'], ['Subida 5–15%', categories.up, 'var(--org)'], ['Plano ±5%', categories.flat, 'var(--tx2)'], ['Descida −5 a −10%', categories.down, 'var(--blu)'], ['Descida forte <−10%', categories.strongDown, 'var(--blu2)']];
-  stats.innerHTML = labels.map(([label, amount, color]) => `<div class="gst"><div class="gv" style="color:${color}">${(amount / G.length * 100).toFixed(1)}%</div><div class="gl">${label}</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3);margin-top:2px">~${(amount / G.length * metrics.distanceKm).toFixed(1)} km</div></div>`).join('');
+  stats.innerHTML = labels.map(([label, amount, color]) => `<div class="gst"><div class="gv" style="color:${color}">${(amount / G.length * 100).toFixed(1)}%</div><div class="gl">${label}</div><div style="font-family:var(--mono);font-size:9px;color:var(--tx3);margin-top:2px">~${(amount / G.length * metrics.distanceKm).toFixed(1)} km</div></div>`).join('');
   document.getElementById('gradientAxis').innerHTML = Array.from({ length: 6 }, (_, index) => `<span>${(metrics.distanceKm / 5 * index).toFixed(index ? 1 : 0)} km</span>`).join('');
   drawGradientChart();
 }
@@ -918,8 +918,8 @@ function drawGradientVolatility() {
   const values = S.map((split) => { const grades = G.filter((sample) => sample.d * 1000 >= split.start && sample.d * 1000 <= split.end).map((sample) => sample.g); const average = grades.reduce((sum, grade) => sum + grade, 0) / Math.max(1, grades.length); return Math.sqrt(grades.reduce((sum, grade) => sum + (grade - average) ** 2, 0) / Math.max(1, grades.length)); });
   const height = 230; const dpr = window.devicePixelRatio || 1; const ctx = canvas.getContext('2d'); canvas.width = width * dpr; canvas.height = height * dpr; canvas.style.height = `${height}px`; ctx.scale(dpr, dpr);
   const padding = { t: 18, r: 12, b: 30, l: 38 }; const chartWidth = width - padding.l - padding.r; const chartHeight = height - padding.t - padding.b; const maxValue = Math.max(...values, 1); const slot = chartWidth / values.length;
-  [0, .5, 1].forEach((ratio) => { const y = padding.t + chartHeight - ratio * chartHeight; ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, y); ctx.lineTo(width - padding.r, y); ctx.stroke(); ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${(maxValue * ratio).toFixed(1)}%`, padding.l - 4, y + 3); });
-  values.forEach((value, index) => { const barWidth = Math.max(4, slot * .6); const barHeight = value / maxValue * chartHeight; const x = padding.l + index * slot + (slot - barWidth) / 2; ctx.fillStyle = value / maxValue > .7 ? '#f0883e' : '#56ce79'; ctx.fillRect(x, padding.t + chartHeight - barHeight, barWidth, barHeight); ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'center'; ctx.fillText(index + 1, x + barWidth / 2, height - 12); });
+  [0, .5, 1].forEach((ratio) => { const y = padding.t + chartHeight - ratio * chartHeight; ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, y); ctx.lineTo(width - padding.r, y); ctx.stroke(); ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'right'; ctx.fillText(`${(maxValue * ratio).toFixed(1)}%`, padding.l - 4, y + 3); });
+  values.forEach((value, index) => { const barWidth = Math.max(4, slot * .6); const barHeight = value / maxValue * chartHeight; const x = padding.l + index * slot + (slot - barWidth) / 2; ctx.fillStyle = value / maxValue > .7 ? '#cb8656' : '#a9b995'; ctx.fillRect(x, padding.t + chartHeight - barHeight, barWidth, barHeight); ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'center'; ctx.fillText(index + 1, x + barWidth / 2, height - 12); });
 }
 
 function drawGradientChart() {
@@ -927,7 +927,7 @@ function drawGradientChart() {
   canvas.width = width * dpr; canvas.height = height * dpr; canvas.style.height = `${height}px`; ctx.scale(dpr, dpr);
   const padding = { t: 16, r: 8, b: 24, l: 36 }; const chartWidth = width - padding.l - padding.r; const chartHeight = height - padding.t - padding.b; const maximum = 35;
   const x = (distance) => padding.l + (distance / Math.max(.1, metrics.distanceKm)) * chartWidth; const y = (grade) => padding.t + chartHeight / 2 - (grade / maximum) * chartHeight / 2;
-  [-20, -10, 0, 10, 20].forEach((value) => { ctx.strokeStyle = '#21262d'; ctx.beginPath(); ctx.moveTo(padding.l, y(value)); ctx.lineTo(width - padding.r, y(value)); ctx.stroke(); ctx.fillStyle = '#484f58'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${value > 0 ? '+' : ''}${value}%`, padding.l - 3, y(value) + 3); });
+  [-20, -10, 0, 10, 20].forEach((value) => { ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, y(value)); ctx.lineTo(width - padding.r, y(value)); ctx.stroke(); ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'right'; ctx.fillText(`${value > 0 ? '+' : ''}${value}%`, padding.l - 3, y(value) + 3); });
   const barWidth = Math.max(2, chartWidth / G.length - .5);
   G.forEach((gradient) => { const value = Math.max(-maximum, Math.min(maximum, gradient.g)); ctx.fillStyle = gradeColor(value); ctx.fillRect(x(gradient.d), Math.min(y(0), y(value)), barWidth, Math.max(1, Math.abs(y(value) - y(0)))); });
 }
@@ -961,8 +961,8 @@ function drawEffortChart() {
   const maximum = Math.max(...values, 1);
   [0, .5, 1].forEach((ratio) => {
     const y = padding.t + chartHeight - ratio * chartHeight;
-    ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, y); ctx.lineTo(width - padding.r, y); ctx.stroke();
-    ctx.fillStyle = '#657d6b'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(maximum * ratio)}`, padding.l - 7, y + 3);
+    ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, y); ctx.lineTo(width - padding.r, y); ctx.stroke();
+    ctx.fillStyle = '#92998e'; ctx.font = '9px DM Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(maximum * ratio)}`, padding.l - 7, y + 3);
   });
   const slot = chartWidth / S.length;
   const barWidth = Math.max(4, slot * .64);
@@ -972,10 +972,10 @@ function drawEffortChart() {
     const x = padding.l + index * slot + (slot - barWidth) / 2;
     const y = padding.t + chartHeight - barHeight;
     const gradient = ctx.createLinearGradient(0, y, 0, padding.t + chartHeight);
-    gradient.addColorStop(0, split.ag > 8 ? '#f0883e' : '#56ce79');
-    gradient.addColorStop(1, '#123722');
+    gradient.addColorStop(0, split.ag > 8 ? '#cb8656' : '#a9b995');
+    gradient.addColorStop(1, '#344236');
     ctx.fillStyle = gradient; ctx.fillRect(x, y, barWidth, barHeight);
-    ctx.fillStyle = '#657d6b'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center'; ctx.fillText(split.km, x + barWidth / 2, height - 14);
+    ctx.fillStyle = '#92998e'; ctx.font = '9px DM Mono'; ctx.textAlign = 'center'; ctx.fillText(split.km, x + barWidth / 2, height - 14);
   });
 }
 
@@ -1146,6 +1146,90 @@ function renderBriefing() {
     input.value = sectorNotes[input.dataset.sectorNote] || '';
     input.addEventListener('input', () => { sectorNotes[input.dataset.sectorNote] = input.value; });
   });
+  renderWeatherBriefing();
+}
+
+let weatherCache = {};
+let weatherRequestSeq = 0;
+
+const WEATHER_CODES = {
+  0: ['☀️', 'Céu limpo'], 1: ['🌤️', 'Poucas nuvens'], 2: ['⛅', 'Parcialmente nublado'], 3: ['☁️', 'Nublado'],
+  45: ['🌫️', 'Neblina'], 48: ['🌫️', 'Neblina com geada'],
+  51: ['🌦️', 'Garoa leve'], 53: ['🌦️', 'Garoa'], 55: ['🌧️', 'Garoa forte'],
+  56: ['🌦️', 'Garoa congelante'], 57: ['🌧️', 'Garoa congelante forte'],
+  61: ['🌧️', 'Chuva leve'], 63: ['🌧️', 'Chuva'], 65: ['🌧️', 'Chuva forte'],
+  66: ['🌧️', 'Chuva congelante'], 67: ['🌧️', 'Chuva congelante forte'],
+  71: ['🌨️', 'Neve leve'], 73: ['🌨️', 'Neve'], 75: ['❄️', 'Neve forte'], 77: ['❄️', 'Grãos de neve'],
+  80: ['🌦️', 'Pancadas leves'], 81: ['🌧️', 'Pancadas'], 82: ['⛈️', 'Pancadas fortes'],
+  85: ['🌨️', 'Pancadas de neve'], 86: ['❄️', 'Pancadas de neve forte'],
+  95: ['⛈️', 'Trovoada'], 96: ['⛈️', 'Trovoada com granizo'], 99: ['⛈️', 'Trovoada com granizo forte'],
+};
+
+function weatherCodeInfo(code) {
+  return WEATHER_CODES[code] || ['🌡️', 'Condição desconhecida'];
+}
+
+async function reverseGeocode(lat, lon) {
+  const key = `geo-${lat.toFixed(2)},${lon.toFixed(2)}`;
+  if (weatherCache[key]) return weatherCache[key];
+  try {
+    const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=pt`);
+    const data = await response.json();
+    const label = [data.city || data.locality, data.principalSubdivision, data.countryName].filter(Boolean).join(', ') || 'Local não identificado';
+    weatherCache[key] = label;
+    return label;
+  } catch (error) {
+    console.error(error);
+    return 'Local não identificado';
+  }
+}
+
+async function renderWeatherBriefing() {
+  const container = document.getElementById('briefingWeather');
+  if (!container) return;
+  const profile = profileData();
+  if (!metrics || !P.length) { container.innerHTML = '<p class="empty-state">Carregue um GPX para consultar a previsão.</p>'; return; }
+  if (!profile.eventDate) { container.innerHTML = '<p class="empty-state">Defina a data da prova para consultar a previsão.</p>'; return; }
+
+  const requestId = ++weatherRequestSeq;
+  container.innerHTML = '<p class="weather-loading">Consultando previsão…</p>';
+
+  const lat = P[0].la;
+  const lon = P[0].lo;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const raceDate = new Date(`${profile.eventDate}T00:00:00`);
+  const diffDays = Math.round((raceDate - today) / 86400000);
+
+  const cityLabel = await reverseGeocode(lat, lon);
+  if (requestId !== weatherRequestSeq) return;
+
+  if (diffDays < 0) { container.innerHTML = `<p class="empty-state">Data já passou. Local: ${cityLabel}.</p>`; return; }
+  if (diffDays > 16) { container.innerHTML = `<p class="empty-state">Previsão diária fica disponível a partir de 16 dias antes da prova. Local: ${cityLabel}.</p>`; return; }
+
+  const cacheKey = `fc-${lat.toFixed(3)}-${lon.toFixed(3)}-${profile.eventDate}`;
+  try {
+    let day = weatherCache[cacheKey];
+    if (!day) {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto&start_date=${profile.eventDate}&end_date=${profile.eventDate}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      const index = data.daily?.time?.indexOf(profile.eventDate) ?? -1;
+      if (index === -1) throw new Error('Sem dados para a data.');
+      day = {
+        code: data.daily.weathercode[index],
+        tempMax: data.daily.temperature_2m_max[index],
+        tempMin: data.daily.temperature_2m_min[index],
+      };
+      weatherCache[cacheKey] = day;
+    }
+    if (requestId !== weatherRequestSeq) return;
+    const [icon, label] = weatherCodeInfo(day.code);
+    container.innerHTML = `<div class="weather-now"><div class="weather-icon">${icon}</div><div><div class="weather-temp">${Math.round(day.tempMin)}°–${Math.round(day.tempMax)}°C</div><div class="weather-desc">${label}</div></div></div><div class="weather-meta">${cityLabel} · previsão para ${raceDate.toLocaleDateString('pt-BR')}</div>`;
+  } catch (error) {
+    if (requestId !== weatherRequestSeq) return;
+    container.innerHTML = `<p class="weather-error">Não foi possível obter a previsão agora. Local: ${cityLabel}.</p>`;
+    console.error(error);
+  }
 }
 
 function addCustomSector() {
@@ -1165,7 +1249,7 @@ function drawRouteSketch(canvas, width, height) {
   canvas.height = height * scale;
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
-  ctx.fillStyle = '#0b1710';
+  ctx.fillStyle = '#161d17';
   ctx.fillRect(0, 0, width, height);
   const padding = 22;
   const lats = P.map((point) => point.la);
@@ -1193,15 +1277,15 @@ function drawRouteSketch(canvas, width, height) {
     P.forEach((point, index) => { const px = x(point.lo); const py = y(point.la); if (!index) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
     ctx.stroke();
   };
-  trace('rgba(180,66,0,.22)', 9);
-  trace('#e0672b', 3);
+  trace('rgba(203,134,86,.2)', 9);
+  trace('#cb8656', 3);
   const dot = (point, color) => {
     ctx.beginPath(); ctx.fillStyle = color; ctx.arc(x(point.lo), y(point.la), 5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#0b1710'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = '#161d17'; ctx.lineWidth = 1.5; ctx.stroke();
   };
-  dot(P[0], '#3fb950');
-  dot(P.at(-1), '#f85149');
-  dot(P.reduce((highest, point) => (point.e > highest.e ? point : highest)), '#e3b341');
+  dot(P[0], '#a9b995');
+  dot(P.at(-1), '#c97062');
+  dot(P.reduce((highest, point) => (point.e > highest.e ? point : highest)), '#d1b36d');
 }
 
 function drawElevationForReport(canvas, width, height) {
@@ -1210,7 +1294,7 @@ function drawElevationForReport(canvas, width, height) {
   canvas.height = height * scale;
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
-  ctx.fillStyle = '#0b1710';
+  ctx.fillStyle = '#161d17';
   ctx.fillRect(0, 0, width, height);
   const padding = { t: 20, r: 16, b: 30, l: 50 };
   const chartWidth = width - padding.l - padding.r;
@@ -1224,16 +1308,16 @@ function drawElevationForReport(canvas, width, height) {
   const y = (elevation) => padding.t + chartHeight - ((elevation - minE) / Math.max(1, maxE - minE)) * chartHeight;
   const elevationStep = maxE - minE > 300 ? 100 : maxE - minE > 100 ? 50 : 20;
   for (let elevation = Math.ceil(minE / elevationStep) * elevationStep; elevation <= maxE; elevation += elevationStep) {
-    ctx.strokeStyle = '#21262d'; ctx.beginPath(); ctx.moveTo(padding.l, y(elevation)); ctx.lineTo(width - padding.r, y(elevation)); ctx.stroke();
-    ctx.fillStyle = '#8a978d'; ctx.font = '10px Helvetica'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 8, y(elevation) + 3);
+    ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, y(elevation)); ctx.lineTo(width - padding.r, y(elevation)); ctx.stroke();
+    ctx.fillStyle = '#92998e'; ctx.font = '10px DM Sans'; ctx.textAlign = 'right'; ctx.fillText(`${Math.round(elevation)}m`, padding.l - 8, y(elevation) + 3);
   }
   const gradient = ctx.createLinearGradient(0, padding.t, 0, height - padding.b);
-  gradient.addColorStop(0, 'rgba(63,185,80,.28)'); gradient.addColorStop(1, 'rgba(63,185,80,.02)');
+  gradient.addColorStop(0, 'rgba(169,185,149,.28)'); gradient.addColorStop(1, 'rgba(169,185,149,.02)');
   ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.lineTo(x(points.at(-1).d), height - padding.b); ctx.lineTo(x(points[0].d), height - padding.b); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
-  ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
+  ctx.strokeStyle = '#a9b995'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(x(points[0].d), y(points[0].e)); points.forEach((point) => ctx.lineTo(x(point.d), y(point.e))); ctx.stroke();
   elevationMarkers.forEach((marker) => {
     const markerX = x(marker.distance);
-    const color = marker.type === 'PCA' ? '#f0883e' : '#58a6ff';
+    const color = marker.type === 'PCA' ? '#cb8656' : '#8eafbb';
     ctx.strokeStyle = color; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.3;
     ctx.beginPath(); ctx.moveTo(markerX, padding.t); ctx.lineTo(markerX, height - padding.b); ctx.stroke();
     ctx.setLineDash([]);
@@ -1242,12 +1326,12 @@ function drawElevationForReport(canvas, width, height) {
   elevationClimbLabels.forEach((label) => {
     const labelX = x(label.distance);
     const labelY = y(label.elevation);
-    ctx.strokeStyle = 'rgba(188,140,255,.6)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(179,169,199,.6)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(labelX, labelY); ctx.lineTo(labelX, labelY - 26); ctx.stroke();
-    ctx.fillStyle = '#bc8cff'; ctx.beginPath(); ctx.arc(labelX, labelY, 2.8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#b3a9c7'; ctx.beginPath(); ctx.arc(labelX, labelY, 2.8, 0, Math.PI * 2); ctx.fill();
     ctx.font = '10px Helvetica'; ctx.textAlign = 'center'; ctx.fillText(label.text, labelX, labelY - 30);
   });
-  ctx.fillStyle = '#8a978d'; ctx.font = '10px Helvetica'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#92998e'; ctx.font = '10px DM Sans'; ctx.textAlign = 'center';
   const kmStep = Math.max(1, Math.round(metrics.distanceKm / 8));
   for (let km = 0; km <= metrics.distanceKm; km += kmStep) ctx.fillText(`${km}km`, x(km * 1000), height - padding.b + 16);
 }
@@ -1465,8 +1549,8 @@ function drawGradientHistogram() {
   if (!width) return;
   const height = 250; const dpr = window.devicePixelRatio || 1; const ctx = canvas.getContext('2d'); canvas.width = width * dpr; canvas.height = height * dpr; canvas.style.height = `${height}px`; ctx.scale(dpr, dpr);
   const buckets = gradientBuckets(); const padding = { t: 22, r: 12, b: 50, l: 38 }; const chartWidth = width - padding.l - padding.r; const chartHeight = height - padding.t - padding.b; const maximum = Math.max(...buckets.map((bucket) => bucket.distance), .1); const slot = chartWidth / buckets.length;
-  [0, .5, 1].forEach((ratio) => { const y = padding.t + chartHeight - ratio * chartHeight; ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, y); ctx.lineTo(width - padding.r, y); ctx.stroke(); ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${(maximum * ratio).toFixed(1)} km`, padding.l - 5, y + 3); });
-  buckets.forEach((bucket, index) => { const barWidth = slot * .68; const barHeight = bucket.distance / maximum * chartHeight; const x = padding.l + index * slot + (slot - barWidth) / 2; const y = padding.t + chartHeight - barHeight; ctx.fillStyle = bucket.color; ctx.fillRect(x, y, barWidth, barHeight); ctx.fillStyle = '#a6b8aa'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'center'; const labels = ['<−10', '−10/−5', '−5/5', '5/10', '10/15', '>15']; ctx.fillText(labels[index], x + barWidth / 2, height - 27); ctx.fillText(`${(bucket.distance / metrics.distanceKm * 100).toFixed(0)}%`, x + barWidth / 2, height - 13); });
+  [0, .5, 1].forEach((ratio) => { const y = padding.t + chartHeight - ratio * chartHeight; ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, y); ctx.lineTo(width - padding.r, y); ctx.stroke(); ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'right'; ctx.fillText(`${(maximum * ratio).toFixed(1)} km`, padding.l - 5, y + 3); });
+  buckets.forEach((bucket, index) => { const barWidth = slot * .68; const barHeight = bucket.distance / maximum * chartHeight; const x = padding.l + index * slot + (slot - barWidth) / 2; const y = padding.t + chartHeight - barHeight; ctx.fillStyle = bucket.color; ctx.fillRect(x, y, barWidth, barHeight); ctx.fillStyle = '#c5c8bd'; ctx.font = '8px DM Mono'; ctx.textAlign = 'center'; const labels = ['<−10', '−10/−5', '−5/5', '5/10', '10/15', '>15']; ctx.fillText(labels[index], x + barWidth / 2, height - 27); ctx.fillText(`${(bucket.distance / metrics.distanceKm * 100).toFixed(0)}%`, x + barWidth / 2, height - 13); });
 }
 
 function drawCumulativeChart() {
@@ -1474,9 +1558,9 @@ function drawCumulativeChart() {
   const height = 250; const dpr = window.devicePixelRatio || 1; const ctx = canvas.getContext('2d'); canvas.width = width * dpr; canvas.height = height * dpr; canvas.style.height = `${height}px`; ctx.scale(dpr, dpr);
   let gain = 0; let loss = 0; const series = P.map((point, index) => { if (index && !point.breakBefore) { const delta = point.e - P[index - 1].e; gain += Math.max(0, delta); loss += Math.max(0, -delta); } return { d: point.d / 1000, gain, loss }; });
   const padding = { t: 18, r: 12, b: 30, l: 40 }; const chartWidth = width - padding.l - padding.r; const chartHeight = height - padding.t - padding.b; const maxValue = Math.max(gain, loss, 1); const x = (d) => padding.l + d / metrics.distanceKm * chartWidth; const y = (value) => padding.t + chartHeight - value / maxValue * chartHeight;
-  [0, .5, 1].forEach((ratio) => { const lineY = y(maxValue * ratio); ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, lineY); ctx.lineTo(width - padding.r, lineY); ctx.stroke(); });
-  [['gain', '#f0883e'], ['loss', '#58a6ff']].forEach(([key, color]) => { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); series.forEach((point, index) => { if (index % 8 === 0 || index === series.length - 1) index ? ctx.lineTo(x(point.d), y(point[key])) : ctx.moveTo(x(point.d), y(point[key])); }); ctx.stroke(); });
-  ctx.font = '9px JetBrains Mono'; ctx.fillStyle = '#f0883e'; ctx.fillText('D+ acumulado', padding.l, 12); ctx.fillStyle = '#58a6ff'; ctx.fillText('D− acumulado', padding.l + 88, 12);
+  [0, .5, 1].forEach((ratio) => { const lineY = y(maxValue * ratio); ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, lineY); ctx.lineTo(width - padding.r, lineY); ctx.stroke(); });
+  [['gain', '#cb8656'], ['loss', '#8eafbb']].forEach(([key, color]) => { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); series.forEach((point, index) => { if (index % 8 === 0 || index === series.length - 1) index ? ctx.lineTo(x(point.d), y(point[key])) : ctx.moveTo(x(point.d), y(point[key])); }); ctx.stroke(); });
+  ctx.font = '9px DM Mono'; ctx.fillStyle = '#cb8656'; ctx.fillText('D+ acumulado', padding.l, 12); ctx.fillStyle = '#8eafbb'; ctx.fillText('D− acumulado', padding.l + 88, 12);
 }
 
 function renderInsights() {
@@ -1502,8 +1586,8 @@ function drawActivityChart() {
   const canvas = document.getElementById('activityC'); const width = canvas.parentElement.getBoundingClientRect().width; if (!width) return;
   const height = 280; const dpr = window.devicePixelRatio || 1; const ctx = canvas.getContext('2d'); canvas.width = width * dpr; canvas.height = height * dpr; canvas.style.height = `${height}px`; ctx.scale(dpr, dpr);
   const segments = activityAnalysis.segments; const paces = segments.map((segment) => segment.pace); const minPace = Math.floor(Math.min(...paces) / 60) * 60; const maxPace = Math.ceil(Math.max(...paces) / 60) * 60; const padding = { t: 20, r: 14, b: 32, l: 46 }; const chartWidth = width - padding.l - padding.r; const chartHeight = height - padding.t - padding.b; const x = (d) => padding.l + d / activityAnalysis.distanceKm * chartWidth; const y = (pace) => padding.t + (pace - minPace) / Math.max(1, maxPace - minPace) * chartHeight;
-  [0, .5, 1].forEach((ratio) => { const pace = minPace + ratio * (maxPace - minPace); const lineY = y(pace); ctx.strokeStyle = '#1d3326'; ctx.beginPath(); ctx.moveTo(padding.l, lineY); ctx.lineTo(width - padding.r, lineY); ctx.stroke(); ctx.fillStyle = '#657d6b'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.floor(pace / 60)}:${String(Math.round(pace % 60)).padStart(2, '0')}`, padding.l - 5, lineY + 3); });
-  ctx.beginPath(); segments.forEach((segment, index) => index ? ctx.lineTo(x(segment.d), y(segment.pace)) : ctx.moveTo(x(segment.d), y(segment.pace))); ctx.strokeStyle = '#56ce79'; ctx.lineWidth = 2; ctx.stroke();
+  [0, .5, 1].forEach((ratio) => { const pace = minPace + ratio * (maxPace - minPace); const lineY = y(pace); ctx.strokeStyle = '#3b493d'; ctx.beginPath(); ctx.moveTo(padding.l, lineY); ctx.lineTo(width - padding.r, lineY); ctx.stroke(); ctx.fillStyle = '#92998e'; ctx.font = '8px DM Mono'; ctx.textAlign = 'right'; ctx.fillText(`${Math.floor(pace / 60)}:${String(Math.round(pace % 60)).padStart(2, '0')}`, padding.l - 5, lineY + 3); });
+  ctx.beginPath(); segments.forEach((segment, index) => index ? ctx.lineTo(x(segment.d), y(segment.pace)) : ctx.moveTo(x(segment.d), y(segment.pace))); ctx.strokeStyle = '#a9b995'; ctx.lineWidth = 2; ctx.stroke();
 }
 
 function renderActivity() {
