@@ -1,9 +1,9 @@
 <div id="tab-splits" class="tpan">
   <div class="card splits-card">
     <header class="splits-intro">
-    <div class="card-eye">Plano por quilômetro</div>
-    <div class="card-title">Splits, ritmo sugerido e anotações</div>
-    <p style="font-size:12px;color:var(--tx2);margin-bottom:16px">A sugestão de ritmo acompanha o relevo. Registre pontos técnicos, estratégia, equipamento ou qualquer instrução de prova em cada km; suas notas ficam salvas neste navegador.</p>
+    <div class="card-eye">Engine de previsão</div>
+    <div class="card-title">Previsão de tempo e ritmo por quilômetro</div>
+    <p style="font-size:12px;color:var(--tx2);margin-bottom:16px">A projeção consolida distância, altimetria, altitude, gradiente, carga, insights do percurso e perfil do atleta. Registre também pontos técnicos, estratégia ou instruções em cada km.</p>
     </header>
     <section class="split-projection" aria-labelledby="projection-title">
       <div>
@@ -28,15 +28,62 @@
           </select>
         </div>
         <label for="targetFinishTime">Tempo objetivo <input id="targetFinishTime" type="text" inputmode="numeric" autocomplete="off" placeholder="1:30:00" aria-describedby="targetTimeHelp"></label>
-        <button id="applyTargetProjection" type="button">Projetar splits</button>
+        <button id="applyTargetProjection" type="button">Projetar ritmos</button>
         <button id="resetTargetProjection" class="secondary" type="button">Restaurar referência</button>
       </div>
       <p class="projection-help" id="targetTimeHelp">Formatos aceitos: 1:30, 1:30:00 ou 90 min.</p>
       <div id="projectionSummary" class="projection-summary" aria-live="polite"></div>
       <p class="projection-disclaimer">Estimativa matemática ilustrativa: pondera distância, D+, D−, inclinação média, picos, desvio de gradiente e desvio altimétrico. Ela não conhece tipo de terreno, condição da trilha, clima, altitude fisiológica, abastecimentos, navegação ou condição do atleta.</p>
     </section>
+    <section class="index-projection" aria-labelledby="index-projection-title">
+      <div>
+        <div class="projection-eye">Projeção por atleta</div>
+        <h3 id="index-projection-title">Previsão por ITRA Performance Index</h3>
+        <p>Transforma o índice informado em velocidade de referência e percorre o GPX em microtrechos: gradiente, descida, variação do relevo, altitude, fadiga, terreno e clima entram na estimativa.</p>
+      </div>
+      <div class="index-controls">
+        <label for="athleteItraIndex">ITRA Performance Index
+          <input id="athleteItraIndex" type="number" min="1" max="1000" step="1" inputmode="numeric" placeholder="Ex.: 641">
+        </label>
+        <label for="athleteGender">Faixa de leitura
+          <select id="athleteGender"><option value="female">Feminina</option><option value="male" selected>Masculina</option></select>
+        </label>
+        <label for="athleteTrailSkill">Experiência técnica
+          <select id="athleteTrailSkill"><option value="beginner">Iniciante</option><option value="intermediate" selected>Intermediária</option><option value="advanced">Avançada</option><option value="expert">Especialista</option></select>
+        </label>
+        <label for="raceTerrain">Terreno predominante
+          <select id="raceTerrain"><option value="road">Estradão / corrível</option><option value="mixed" selected>Trail misto</option><option value="technical">Técnico</option><option value="snow">Neve / lama</option></select>
+        </label>
+        <label for="raceWeather">Condição climática
+          <select id="raceWeather"><option value="normal" selected>Normal</option><option value="warm">Calor moderado</option><option value="hot">Calor extremo</option><option value="cold">Frio intenso</option></select>
+        </label>
+        <label for="raceRunability">Trechos corríveis
+          <select id="raceRunability"><option value="low">Poucos</option><option value="mixed" selected>Mistos</option><option value="high">Muitos</option></select>
+        </label>
+        <label for="athleteRaceExperience">Experiência em prova
+          <select id="athleteRaceExperience"><option value="learning">Em desenvolvimento</option><option value="experienced" selected>Experiente</option><option value="competitive">Competitiva</option></select>
+        </label>
+        <button id="applyIndexProjection" type="button">Projetar com ITRA</button>
+      </div>
+      <details class="precision-details">
+        <summary><span>Aprimorar precisão</span><small>opcional · tempos no plano</small></summary>
+        <div class="precision-fields">
+          <label for="road5kTime">Melhor 5 km recente
+            <input id="road5kTime" type="text" inputmode="numeric" autocomplete="off" placeholder="Ex.: 19:30">
+          </label>
+          <label for="road10kTime">Melhor 10 km recente
+            <input id="road10kTime" type="text" inputmode="numeric" autocomplete="off" placeholder="Ex.: 40:30">
+          </label>
+          <p>Use tempos feitos no plano, de preferência em prova ou esforço máximo recente. Deixe vazio se não souber. O ITRA continua como base; estes tempos ajustam somente os splits corríveis do início e do final.</p>
+        </div>
+      </details>
+      <div id="indexProjectionSummary" class="index-projection-summary" aria-live="polite">
+        <p>Informe o ITRA Performance Index para criar uma previsão de tempo orientada ao atleta.</p>
+      </div>
+      <p class="projection-disclaimer">O ITRA PI é um dado oficial informado pelo atleta; a conversão para tempo é uma calibração VERTEX, não um cálculo nem uma previsão oficial da ITRA. Em app local não consultamos perfis ITRA automaticamente. A integração futura precisa de fonte/API autorizada e backend, sem scraping.</p>
+    </section>
     <div class="tbl-wrap"><table><thead><tr>
-      <th>Km</th><th>Terreno</th><th>D+</th><th>D−</th><th>Grade</th><th>Pico</th><th>Faixa</th><th>Referência</th><th>Projeção / ajuste</th><th>Acumulado</th><th>Nota do km</th>
+      <th>Km</th><th>Trecho / dificuldade</th><th>D+</th><th>D−</th><th>Grade</th><th>Pico</th><th>Altitude</th><th>Referência</th><th>Centro / faixa</th><th>Acumulado</th><th>Nota do km</th>
     </tr></thead><tbody id="sBody"></tbody></table></div>
     <div class="totals" id="totBar"></div>
   </div>

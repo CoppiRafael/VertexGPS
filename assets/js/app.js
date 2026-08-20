@@ -17,6 +17,7 @@ let sectorNotes = {};
 let hasLoadedGpx = false;
 let activityAnalysis = null;
 let targetProjection = null;
+let projectionFeatures = null;
 let elevationMarkers = [];
 let elevationClimbLabels = [];
 let annotationMode = null;
@@ -58,6 +59,7 @@ function smoothElevation(points) {
 
 function buildAnalysis(rawPoints, fileName) {
   targetProjection = null;
+  projectionFeatures = null;
   const missingElevation = rawPoints.filter((point) => !Number.isFinite(point.e)).length;
   const elevationJumps = rawPoints.slice(1).filter((point, index) => Number.isFinite(point.e) && Number.isFinite(rawPoints[index].e) && Math.abs(point.e - rawPoints[index].e) > 30).length;
   const hasElevation = rawPoints.some((point) => Number.isFinite(point.e));
@@ -112,6 +114,7 @@ function buildAnalysis(rawPoints, fileName) {
   buildGradients();
   buildSplits();
   buildRouteSectors();
+  projectionFeatures = buildProjectionFeatures();
 }
 
 function buildGradients() {
@@ -706,6 +709,20 @@ function targetDurationSeconds(value) {
   return NaN;
 }
 
+function shortRaceTimeSeconds(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const clock = normalized.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+  if (clock) {
+    const hours = Number(clock[1] || 0);
+    const minutes = Number(clock[2]);
+    const seconds = Number(clock[3]);
+    return minutes < 60 && seconds < 60 ? hours * 3600 + minutes * 60 + seconds : NaN;
+  }
+  const minutes = normalized.match(/^(\d+(?:[.,]\d+)?)\s*(?:m|min|minutos?)$/);
+  return minutes ? Number(minutes[1].replace(',', '.')) * 60 : NaN;
+}
+
 function standardDeviation(values) {
   if (!values.length) return 0;
   const average = values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -715,6 +732,89 @@ function standardDeviation(values) {
 function splitGradeDeviation(split) {
   const grades = G.filter((sample) => sample.d * 1000 >= split.start && sample.d * 1000 <= split.end).map((sample) => sample.g);
   return standardDeviation(grades.length ? grades : [split.ag]);
+}
+
+function percentile(values, ratio) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const position = (sorted.length - 1) * clamp(ratio, 0, 1);
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+function buildProjectionFeatures() {
+  let altitudeWeighted = 0;
+  let altitudeDistance = 0;
+  let above1500 = 0;
+  let above2000 = 0;
+  P.forEach((point, index) => {
+    if (!index || point.breakBefore) return;
+    const previous = P[index - 1];
+    const distance = Math.max(0, point.d - previous.d);
+    const altitude = (point.e + previous.e) / 2;
+    altitudeWeighted += altitude * distance;
+    altitudeDistance += distance;
+    if (altitude >= 1500) above1500 += distance;
+    if (altitude >= 2000) above2000 += distance;
+  });
+
+  let runnableDistance = 0;
+  let steepUpDistance = 0;
+  let steepDownDistance = 0;
+  G.forEach((sample, index) => {
+    const next = G[index + 1];
+    const distance = Math.max(0, (next ? next.d : metrics.distanceKm) - sample.d);
+    if (sample.g >= -7 && sample.g <= 6) runnableDistance += distance;
+    if (sample.g > 15) steepUpDistance += distance;
+    if (sample.g < -10) steepDownDistance += distance;
+  });
+
+  const volatility = S.map(splitGradeDeviation);
+  const loads = S.map(splitLoad);
+  const totalLoad = loads.reduce((sum, value) => sum + value, 0);
+  const topLoad = [...loads].sort((a, b) => b - a).slice(0, Math.min(3, loads.length)).reduce((sum, value) => sum + value, 0);
+  const runs = sustainedGradientRuns();
+  const climbRuns = runs.filter((run) => run.band.id.startsWith('up'));
+  const descentRuns = runs.filter((run) => run.band.id.startsWith('down'));
+  const longestClimb = climbRuns.sort((a, b) => b.length - a.length)[0] || null;
+  const longestDescent = descentRuns.sort((a, b) => b.length - a.length)[0] || null;
+  const runnableShare = runnableDistance / Math.max(.01, metrics.distanceKm);
+  const extremeShare = (steepUpDistance + steepDownDistance) / Math.max(.01, metrics.distanceKm);
+  const volatilityMean = volatility.reduce((sum, value) => sum + value, 0) / Math.max(1, volatility.length);
+  const loadConcentration = totalLoad ? topLoad / totalLoad : 0;
+  const technicality = clamp(extremeShare * .5 + clamp(volatilityMean / 18, 0, 1) * .3 + clamp(metrics.vertical / 120, 0, 1) * .12 + clamp(loadConcentration - .3, 0, .5) * .16, 0, 1);
+
+  const features = {
+    route: { distanceKm: metrics.distanceKm, gain: metrics.gain, loss: metrics.loss, kmEffort: metrics.effort, verticalDensity: metrics.vertical },
+    altitude: { minimum: metrics.minElevation, maximum: metrics.maxElevation, mean: altitudeWeighted / Math.max(1, altitudeDistance), above1500Share: above1500 / Math.max(1, altitudeDistance), above2000Share: above2000 / Math.max(1, altitudeDistance) },
+    gradient: { runnableShare, steepUpShare: steepUpDistance / Math.max(.01, metrics.distanceKm), steepDownShare: steepDownDistance / Math.max(.01, metrics.distanceKm), extremeShare, volatilityMean, volatilityP90: percentile(volatility, .9), longestClimb, longestDescent },
+    load: { mean: totalLoad / Math.max(1, loads.length), maximum: Math.max(...loads, 0), p90: percentile(loads, .9), concentration: loadConcentration },
+    insights: { technicality, sectorCount: autoSectors.length, criticalSectorCount: autoSectors.filter((sector) => splitLoad(sector) >= percentile(loads, .75)).length },
+  };
+  features.splits = S.map((split) => analyzeSplitDifficulty(split, features));
+  features.insights.highDifficultyCount = features.splits.filter((difficulty) => difficulty.score >= 65).length;
+  return features;
+}
+
+function analyzeSplitDifficulty(split, features = projectionFeatures) {
+  const volatility = splitGradeDeviation(split);
+  const peak = Math.max(Math.abs(split.mg), Math.abs(split.ng));
+  const loadScore = clamp(splitLoad(split) / Math.max(1, features?.load.p90 || splitLoad(split)) / 1.35, 0, 1);
+  const volatilityScore = clamp(volatility / Math.max(8, features?.gradient.volatilityP90 || volatility), 0, 1);
+  const slopeScore = clamp(peak / 28, 0, 1);
+  const verticalScore = clamp((split.g + split.l * .35) / 150, 0, 1);
+  const structuralScore = features?.insights.technicality || 0;
+  const score = Math.round((loadScore * .30 + volatilityScore * .22 + slopeScore * .20 + verticalScore * .16 + structuralScore * .12) * 100);
+  const level = score < 28 ? 'Baixa' : score < 46 ? 'Moderada' : score < 64 ? 'Alta' : score < 82 ? 'Muito alta' : 'Extrema';
+  const tone = score < 28 ? 'low' : score < 46 ? 'moderate' : score < 64 ? 'high' : score < 82 ? 'very-high' : 'extreme';
+  const drivers = [];
+  if (loadScore >= .7) drivers.push('carga');
+  if (volatilityScore >= .7) drivers.push('variação de gradiente');
+  if (slopeScore >= .7) drivers.push('inclinação máxima');
+  if (verticalScore >= .7) drivers.push('componente vertical');
+  if (!drivers.length) drivers.push('relevo controlável');
+  return { score, level, tone, drivers, volatility, load: splitLoad(split), peak };
 }
 
 function splitProjectionProfile(split) {
@@ -784,6 +884,266 @@ function buildGapFatigueProjection(targetSeconds) {
   return { targetSeconds, profiles: projected, paces: roundedPaces };
 }
 
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function itraLevel(index, gender) {
+  const limits = gender === 'female'
+    ? [[300, 'Em desenvolvimento'], [450, 'Intermediária'], [550, 'Avançada'], [700, 'Alto desempenho'], [Infinity, 'Elite internacional']]
+    : [[350, 'Em desenvolvimento'], [500, 'Intermediário'], [650, 'Avançado'], [825, 'Alto desempenho'], [Infinity, 'Elite internacional']];
+  return limits.find(([limit]) => index < limit)[1];
+}
+
+function itraFlatSpeed(index) {
+  // Calibração VERTEX: curva suave, deliberadamente separada do algoritmo proprietário da ITRA.
+  return 6 + 17 * Math.pow(clamp(index, 1, 1000) / 1000, 1.55);
+}
+
+function terrainMultiplier(terrain, skill) {
+  const byTerrain = {
+    road: { beginner: 1.01, intermediate: .99, advanced: .97, expert: .96 },
+    mixed: { beginner: 1.15, intermediate: 1.10, advanced: 1.08, expert: 1.06 },
+    technical: { beginner: 1.40, intermediate: 1.28, advanced: 1.18, expert: 1.13 },
+    snow: { beginner: 1.56, intermediate: 1.40, advanced: 1.27, expert: 1.19 },
+  };
+  return byTerrain[terrain]?.[skill] || 1;
+}
+
+function weatherMultiplier(weather) {
+  return { normal: 1, warm: 1.035, hot: 1.09, cold: 1.055 }[weather] || 1;
+}
+
+function runabilityMultiplier(runability, skill) {
+  const values = {
+    low: { beginner: 1.04, intermediate: 1.025, advanced: 1.01, expert: 1 },
+    mixed: { beginner: 1.02, intermediate: 1.005, advanced: .99, expert: .98 },
+    high: { beginner: 1, intermediate: .975, advanced: .945, expert: .925 },
+  };
+  return values[runability]?.[skill] || 1;
+}
+
+function descentEquivalentDivisor(skill) {
+  return { beginner: 260, intermediate: 650, advanced: 1800, expert: Infinity }[skill] || 650;
+}
+
+function roadCalibrationWeight(settings, routeEquivalentKm) {
+  const terrainWeight = { road: .46, mixed: .27, technical: .12, snow: .06 }[settings.terrain] || .2;
+  const runabilityWeight = { low: .7, mixed: 1, high: 1.22 }[settings.runability] || 1;
+  const distanceWeight = clamp(1 - Math.max(0, routeEquivalentKm - 45) / 130, .35, 1);
+  return clamp(terrainWeight * runabilityWeight * distanceWeight, .03, .5);
+}
+
+function buildRoadCalibration(settings, routeEquivalentKm) {
+  const fiveSeconds = shortRaceTimeSeconds(settings.road5k);
+  const tenSeconds = shortRaceTimeSeconds(settings.road10k);
+  const validFive = fiveSeconds === null || (Number.isFinite(fiveSeconds) && fiveSeconds >= 12 * 60 && fiveSeconds <= 90 * 60);
+  const validTen = tenSeconds === null || (Number.isFinite(tenSeconds) && tenSeconds >= 25 * 60 && tenSeconds <= 180 * 60);
+  const anchors = [];
+  const warnings = [];
+  if (fiveSeconds !== null && validFive) anchors.push({ distance: 5, seconds: fiveSeconds });
+  else if (fiveSeconds !== null) warnings.push('5 km ignorado: use mm:ss entre 12:00 e 90:00');
+  if (tenSeconds !== null && validTen) anchors.push({ distance: 10, seconds: tenSeconds });
+  else if (tenSeconds !== null) warnings.push('10 km ignorado: use mm:ss entre 25:00 e 180:00');
+  if (!anchors.length) return warnings.length ? { warnings, weight: 0 } : null;
+
+  let exponent = settings.gender === 'female' ? 1.075 : 1.07;
+  let consistency = 1;
+  if (anchors.length === 2) {
+    const observed = Math.log(tenSeconds / fiveSeconds) / Math.log(2);
+    exponent = clamp(observed, 1.03, 1.18);
+    if (observed < 1.03 || observed > 1.18) {
+      warnings.push('5 km e 10 km pouco compatíveis; influência reduzida');
+      consistency = .5;
+    }
+  }
+
+  const projectionDistance = Math.max(10, routeEquivalentKm);
+  const speeds = anchors.map((anchor) => {
+    const projectedSeconds = anchor.seconds * Math.pow(projectionDistance / anchor.distance, exponent);
+    return projectionDistance / (projectedSeconds / 3600);
+  });
+  const speedKph = speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length;
+  const source = anchors.map((anchor) => `${anchor.distance}K`).join(' + ');
+  const weight = roadCalibrationWeight(settings, routeEquivalentKm) * consistency * (anchors.length === 1 && anchors[0].distance === 5 ? .85 : 1);
+  return { speedKph, weight, exponent, source, warnings };
+}
+
+function indexProjectionSettings() {
+  return {
+    index: Number(document.getElementById('athleteItraIndex').value),
+    gender: document.getElementById('athleteGender').value,
+    skill: document.getElementById('athleteTrailSkill').value,
+    terrain: document.getElementById('raceTerrain').value,
+    weather: document.getElementById('raceWeather').value,
+    runability: document.getElementById('raceRunability').value,
+    raceExperience: document.getElementById('athleteRaceExperience').value,
+    road5k: document.getElementById('road5kTime').value,
+    road10k: document.getElementById('road10kTime').value,
+  };
+}
+
+function buildIndexProjection(settings) {
+  const features = projectionFeatures || buildProjectionFeatures();
+  const terrainFactor = terrainMultiplier(settings.terrain, settings.skill);
+  const weatherFactor = weatherMultiplier(settings.weather);
+  const runabilityFactor = runabilityMultiplier(settings.runability, settings.skill);
+  const descentDivisor = descentEquivalentDivisor(settings.skill);
+  const routeVolume = clamp((features.route.kmEffort - 18) / 95, 0, 1);
+  const skillSensitivity = { beginner: .09, intermediate: .06, advanced: .035, expert: .02 }[settings.skill] || .05;
+  const automaticRunability = 1 - (features.gradient.runnableShare - .40) * skillSensitivity;
+  const structuralDifficulty = 1 + (features.insights.technicality - .50) * skillSensitivity;
+  const analyticalFactor = clamp(automaticRunability * structuralDifficulty, .96, 1.10);
+  const loadFatigue = 1 + features.load.concentration * .12 + clamp(features.gradient.volatilityMean / 18, 0, 1) * .08;
+  const splitWeights = new Array(S.length).fill(0);
+  let totalWeight = 0;
+  let cumulativeDistance = 0;
+  let cumulativeGainForFatigue = 0;
+  let previousGrade = 0;
+
+  for (let index = 1; index < P.length; index += 1) {
+    const previous = P[index - 1];
+    const point = P[index];
+    if (point.breakBefore) continue;
+    const metres = point.d - previous.d;
+    if (metres < 1) continue;
+    const distanceKm = metres / 1000;
+    const delta = point.e - previous.e;
+    const gain = Math.max(0, delta);
+    const loss = Math.max(0, -delta);
+    const grade = clamp(delta / metres * 100, -30, 30);
+    const metabolic = clamp(minettiCost(grade) / FLAT_RUNNING_COST, .62, 3.4);
+    // O maior dos dois termos evita subestimar rampas curtas sem contar o ganho duas vezes.
+    const verticalEquivalent = distanceKm + gain / 100 + loss / descentDivisor;
+    const gradeEquivalent = distanceKm * metabolic;
+    const ruggedness = 1 + Math.min(.07, Math.abs(grade - previousGrade) / 100 * .14);
+    const meanAltitude = (previous.e + point.e) / 2;
+    const altitudeFactor = 1 + Math.max(0, meanAltitude - 1500) / 1000 * .035;
+    const distanceProgress = cumulativeDistance / Math.max(1, metrics.distance);
+    const gainProgress = cumulativeGainForFatigue / Math.max(1, metrics.gain);
+    const fatigue = 1 + routeVolume * (distanceProgress * .10 + gainProgress * .12) * loadFatigue;
+    const weight = Math.max(verticalEquivalent, gradeEquivalent) * ruggedness * altitudeFactor * terrainFactor * weatherFactor * runabilityFactor * analyticalFactor * fatigue;
+    const midpoint = (previous.d + point.d) / 2;
+    const splitIndex = clamp(Math.floor(midpoint / 1000), 0, S.length - 1);
+    splitWeights[splitIndex] += weight;
+    totalWeight += weight;
+    cumulativeDistance += metres;
+    cumulativeGainForFatigue += gain;
+    previousGrade = grade;
+  }
+
+  const difficultySensitivity = { beginner: .10, intermediate: .06, advanced: .03, expert: .012 }[settings.skill] || .05;
+  features.splits.forEach((difficulty, index) => {
+    const excessDifficulty = Math.max(0, difficulty.score - 50) / 50;
+    splitWeights[index] *= 1 + excessDifficulty * difficultySensitivity;
+  });
+
+  const edgeBoost = settings.raceExperience === 'competitive' ? .91 : settings.raceExperience === 'experienced' ? .965 : 1;
+  const isRunnableEdge = (split) => {
+    const position = (split.start + split.end) / 2 / Math.max(1, metrics.distance);
+    return split.ag >= -7 && split.ag <= 5 && split.mg < 12 && split.ng > -16 && (position < .16 || position > .82);
+  };
+  S.forEach((split, index) => {
+    if (isRunnableEdge(split)) splitWeights[index] *= edgeBoost;
+  });
+  totalWeight = splitWeights.reduce((sum, weight) => sum + weight, 0);
+  const itraSpeedKph = itraFlatSpeed(settings.index);
+  const roadCalibration = buildRoadCalibration(settings, totalWeight);
+  const roadFineTune = roadCalibration?.speedKph
+    ? clamp((roadCalibration.speedKph / itraSpeedKph - 1) * roadCalibration.weight, -.025, .025)
+    : 0;
+  if (roadFineTune) {
+    S.forEach((split, index) => {
+      if (isRunnableEdge(split)) splitWeights[index] *= 1 - roadFineTune;
+    });
+    roadCalibration.adjustment = roadFineTune;
+    totalWeight = splitWeights.reduce((sum, weight) => sum + weight, 0);
+  }
+  const flatSpeedKph = itraSpeedKph;
+  const targetSeconds = totalWeight / flatSpeedKph * 3600;
+  const profiles = S.map((split, index) => {
+    const distanceKm = Math.max(.01, (split.end - split.start) / 1000);
+    const weight = splitWeights[index] || distanceKm;
+    return {
+      split,
+      distanceKm,
+      weight,
+      coefficient: weight / distanceKm,
+      difficulty: features.splits[index],
+      gradeDeviation: splitGradeDeviation(split),
+      duration: targetSeconds * weight / totalWeight,
+    };
+  });
+  const paces = profiles.map((profile) => Math.max(1, Math.round(profile.duration / profile.distanceKm)));
+  const represented = paces.reduce((sum, pace, index) => sum + pace * profiles[index].distanceKm, 0);
+  const lastPace = paces.length - 1;
+  if (lastPace >= 0) paces[lastPace] = Math.max(1, paces[lastPace] + Math.round((targetSeconds - represented) / profiles[lastPace].distanceKm));
+  const roadConfidence = roadCalibration?.speedKph
+    ? (roadCalibration.source.includes('+') && !roadCalibration.warnings.length ? 1.5 : .75)
+    : 0;
+  const uncertainty = Math.max(5, 7 + (settings.skill === 'beginner' ? 3 : settings.skill === 'intermediate' ? 1 : 0) + (settings.terrain === 'snow' ? 3 : settings.terrain === 'technical' ? 1 : 0) + (metrics.quality.elevationJumps ? 2 : 0) - roadConfidence);
+  const range = { low: targetSeconds * (1 - uncertainty / 100), high: targetSeconds * (1 + uncertainty / 100) };
+  return { source: 'itra', settings, features, analyticalFactor, flatSpeedKph, itraSpeedKph, roadCalibration, routeEquivalentKm: totalWeight, targetSeconds, range, profiles, paces, uncertainty };
+}
+
+function renderIndexProjectionSummary(projection) {
+  const { settings, features, targetSeconds, range, uncertainty, flatSpeedKph, itraSpeedKph, roadCalibration, routeEquivalentKm } = projection;
+  const label = itraLevel(settings.index, settings.gender);
+  const terrainLabel = document.getElementById('raceTerrain').selectedOptions[0].textContent;
+  const roadAdjustment = roadCalibration?.adjustment || 0;
+  const roadDetail = roadCalibration?.speedKph
+    ? `ITRA ${itraSpeedKph.toFixed(1)} km/h · ${roadCalibration.source} ${roadAdjustment ? `ajustou início/final em ${roadAdjustment > 0 ? '−' : '+'}${Math.abs(roadAdjustment * 100).toFixed(1)}%` : 'confirmou a referência'}`
+    : 'curva de calibração VERTEX pelo ITRA';
+  const roadWarning = roadCalibration?.warnings?.length ? `<p>${roadCalibration.warnings.join(' · ')}</p>` : '';
+  const longestClimb = features.gradient.longestClimb;
+  document.getElementById('indexProjectionSummary').innerHTML = `
+    <article class="index-stat range-stat"><span>Faixa provável</span><strong>${timeLabel(range.low)}–${timeLabel(range.high)}</strong><small>centro matemático ${timeLabel(targetSeconds)}</small></article>
+    <article class="index-stat"><span>Nível pelo PI</span><strong>${label}</strong><small>ITRA ${Math.round(settings.index)} · leitura ${settings.gender === 'female' ? 'feminina' : 'masculina'}</small></article>
+    <article class="index-stat"><span>Velocidade-base</span><strong>${flatSpeedKph.toFixed(1)} km/h</strong><small>${roadDetail}</small></article>
+    <article class="index-stat"><span>Esforço ajustado</span><strong>${routeEquivalentKm.toFixed(1)} km-e</strong><small>microgradiente + relevo + fadiga</small></article>
+    <article class="index-stat"><span>Cenário</span><strong>±${uncertainty.toFixed(1).replace('.0', '')}%</strong><small>${terrainLabel} · clima e técnica considerados</small></article>
+    <details class="engine-audit"><summary>Entradas consolidadas do engine</summary><div>
+      <span><b>${features.route.distanceKm.toFixed(1)} km</b> distância</span>
+      <span><b>+${Math.round(features.route.gain)} m</b> altimetria</span>
+      <span><b>${Math.round(features.altitude.mean)} m</b> altitude média</span>
+      <span><b>${Math.round(features.gradient.runnableShare * 100)}%</b> corrível pelo GPX</span>
+      <span><b>${features.gradient.volatilityMean.toFixed(1)}%</b> volatilidade</span>
+      <span><b>${Math.round(features.load.p90)}</b> carga P90</span>
+      <span><b>${Math.round(features.load.concentration * 100)}%</b> carga nos 3 piores km</span>
+      <span><b>${Math.round(features.insights.technicality * 100)}/100</b> tecnicidade estrutural</span>
+      <span><b>${features.insights.highDifficultyCount}</b> km de dificuldade alta+</span>
+      <span><b>${longestClimb ? `${longestClimb.length.toFixed(1)} km` : '—'}</b> maior subida sustentada</span>
+    </div></details>${roadWarning}`;
+}
+
+function renderSplitProjectionRanges(projection) {
+  document.querySelectorAll('#sBody .pace-range').forEach((range, index) => {
+    const difficulty = projection.profiles[index]?.difficulty?.score || 50;
+    const spread = clamp(projection.uncertainty + Math.max(0, difficulty - 50) * .035, 5, 18) / 100;
+    const pace = projection.paces[index];
+    range.textContent = `${formatPace(pace * (1 - spread))}–${formatPace(pace * (1 + spread))}`;
+    range.title = `Faixa provável do km ${index + 1}`;
+  });
+}
+
+function clearSplitProjectionRanges() {
+  document.querySelectorAll('#sBody .pace-range').forEach((range) => { range.textContent = ''; });
+}
+
+function applyIndexProjection() {
+  const settings = indexProjectionSettings();
+  if (!Number.isFinite(settings.index) || settings.index < 1 || settings.index > 1000) {
+    document.getElementById('indexProjectionSummary').innerHTML = '<p>Informe um ITRA Performance Index válido, entre 1 e 1000.</p>';
+    document.getElementById('athleteItraIndex').focus();
+    return;
+  }
+  targetProjection = buildIndexProjection(settings);
+  document.querySelectorAll('#sBody .pace-input').forEach((input, index) => { input.value = formatPace(targetProjection.paces[index]); });
+  renderSplitProjectionRanges(targetProjection);
+  renderIndexProjectionSummary(targetProjection);
+  calcTotal();
+}
+
 function renderProjectionSummary(projection) {
   const slowest = [...projection.profiles].sort((a, b) => b.duration / b.distanceKm - a.duration / a.distanceKm)[0];
   const mostVariable = [...projection.profiles].sort((a, b) => b.gradeDeviation - a.gradeDeviation)[0];
@@ -802,6 +1162,7 @@ function applyTargetProjection() {
   const model = document.getElementById('projectionModel').value;
   targetProjection = model === 'gap-fatigue' ? buildGapFatigueProjection(targetSeconds) : buildTargetProjection(targetSeconds);
   document.querySelectorAll('#sBody .pace-input').forEach((input, index) => { input.value = formatPace(targetProjection.paces[index]); });
+  clearSplitProjectionRanges();
   renderProjectionSummary(targetProjection);
   calcTotal();
 }
@@ -810,6 +1171,7 @@ function resetTargetProjection() {
   targetProjection = null;
   document.getElementById('targetFinishTime').value = '';
   document.querySelectorAll('#sBody .pace-input').forEach((input, index) => { input.value = suggestedPace(S[index]); });
+  clearSplitProjectionRanges();
   document.getElementById('projectionSummary').innerHTML = '';
   calcTotal();
 }
@@ -818,10 +1180,11 @@ function initSplits() {
   const body = document.getElementById('sBody');
   const notes = savedNotes();
   body.innerHTML = '';
-  S.forEach((split) => {
+  S.forEach((split, index) => {
     const pace = suggestedPace(split);
+    const difficulty = projectionFeatures?.splits[index] || analyzeSplitDifficulty(split);
     const row = document.createElement('tr');
-    row.innerHTML = `<td>${split.km}</td><td style="font-family:var(--sans);font-weight:400;color:var(--tx2);font-size:11px">${terrainFor(split)}</td><td class="up">+${split.g}m</td><td class="dn">−${split.l}m</td><td style="color:${gradeColor(split.ag)}">${split.ag >= 0 ? '+' : ''}${split.ag.toFixed(1)}%</td><td style="color:${gradeColor(split.mg)}">${split.mg >= 0 ? '+' : ''}${split.mg.toFixed(0)}%</td><td>${split.mn}–${split.mx}m</td><td style="color:#d1b36d">${pace}</td><td><input class="pace-input" type="text" value="${pace}" aria-label="Pace do km ${split.km}"></td><td class="acum" style="color:var(--em)">—</td>`;
+    row.innerHTML = `<td>${split.km}</td><td class="terrain-reading"><span>${terrainFor(split)}</span><small class="difficulty-pill difficulty-${difficulty.tone}" title="Base: ${difficulty.drivers.join(', ')}">${difficulty.level} · ${difficulty.score}</small></td><td class="up">+${split.g}m</td><td class="dn">−${split.l}m</td><td style="color:${gradeColor(split.ag)}">${split.ag >= 0 ? '+' : ''}${split.ag.toFixed(1)}%</td><td style="color:${gradeColor(split.mg)}">${split.mg >= 0 ? '+' : ''}${split.mg.toFixed(0)}%</td><td>${split.mn}–${split.mx}m</td><td style="color:#d1b36d">${pace}</td><td class="pace-projection-cell"><input class="pace-input" type="text" value="${pace}" aria-label="Pace do km ${split.km}"><small class="pace-range"></small></td><td class="acum" style="color:var(--em)">—</td>`;
     const noteCell = document.createElement('td');
     const noteInput = document.createElement('input');
     noteInput.className = 'note-input';
@@ -832,7 +1195,7 @@ function initSplits() {
     noteInput.addEventListener('input', () => { notes[split.km] = noteInput.value; saveNotes(notes); });
     noteCell.appendChild(noteInput);
     row.appendChild(noteCell);
-    row.querySelector('.pace-input').addEventListener('input', () => { if (targetProjection) targetProjection.isAdjusted = true; calcTotal(); });
+    row.querySelector('.pace-input').addEventListener('input', () => { if (targetProjection) targetProjection.isAdjusted = true; row.querySelector('.pace-range').textContent = ''; calcTotal(); });
     body.appendChild(row);
   });
   document.getElementById('targetFinishTime').value = '';
@@ -840,6 +1203,12 @@ function initSplits() {
   document.getElementById('applyTargetProjection').onclick = applyTargetProjection;
   document.getElementById('resetTargetProjection').onclick = resetTargetProjection;
   document.getElementById('targetFinishTime').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); applyTargetProjection(); } };
+  document.getElementById('applyIndexProjection').onclick = applyIndexProjection;
+  document.getElementById('athleteItraIndex').onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); applyIndexProjection(); } };
+  ['road5kTime', 'road10kTime'].forEach((id) => {
+    document.getElementById(id).onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); applyIndexProjection(); } };
+  });
+  document.getElementById('indexProjectionSummary').innerHTML = '<p>Informe o ITRA Performance Index para criar uma previsão de tempo orientada ao atleta.</p>';
   calcTotal();
 }
 
@@ -853,7 +1222,11 @@ function calcTotal() {
     accumulated.textContent = timeLabel(total);
   });
   const average = total / metrics.distanceKm;
-  const target = targetProjection ? `<div class="tot"><div class="tot-l">Meta escolhida</div><div class="tot-v" style="color:#ecc3a4">${timeLabel(targetProjection.targetSeconds)}</div></div>` : '';
+  const targetLabel = targetProjection?.source === 'itra' ? 'Projeção pelo ITRA' : 'Meta escolhida';
+  const targetValue = targetProjection?.source === 'itra' && targetProjection.range
+    ? `${timeLabel(targetProjection.range.low)}–${timeLabel(targetProjection.range.high)}<span class="tot-center">centro ${timeLabel(targetProjection.targetSeconds)}</span>`
+    : targetProjection ? timeLabel(targetProjection.targetSeconds) : '';
+  const target = targetProjection ? `<div class="tot"><div class="tot-l">${targetLabel}</div><div class="tot-v tot-range" style="color:#ecc3a4">${targetValue}</div></div>` : '';
   const adjustment = targetProjection?.isAdjusted ? ' ajustado manualmente' : '';
   document.getElementById('totBar').innerHTML = `<div class="tot"><div class="tot-l">Tempo do plano${adjustment}</div><div class="tot-v" style="color:var(--em)">${timeLabel(total)}</div></div>${target}<div class="tot"><div class="tot-l">Pace médio</div><div class="tot-v" style="color:#d1b36d">${formatPace(average)}<span style="font-size:14px;color:var(--tx2)"> /km</span></div></div><div class="tot"><div class="tot-l">Base do cálculo</div><div class="tot-v" style="font-size:18px">${decimal.format(metrics.distanceKm)} km</div></div>`;
 }
@@ -1045,13 +1418,13 @@ function setupUpload() {
 }
 
 function setupTabs() {
-  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Splits por km'], ['grad', 'Gradiente'], ['strat', 'Estratégia']];
+  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Previsão'], ['grad', 'Gradiente'], ['strat', 'Estratégia']];
   const navigation = document.getElementById('tabNav');
   tabs.forEach(([id, label], index) => { const button = document.createElement('button'); button.className = `tab${index === 0 ? ' on' : ''}`; button.textContent = label; button.addEventListener('click', () => { document.querySelectorAll('.tpan').forEach((panel) => panel.classList.remove('on')); document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('on')); document.getElementById(`tab-${id}`).classList.add('on'); button.classList.add('on'); if (id === 'alt') drawElevation(); if (id === 'grad') drawGradientChart(); if (id === 'geral') setTimeout(() => routeMap.invalidateSize(), 0); }); navigation.appendChild(button); });
 }
 
 function setupTabs() {
-  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Splits por km'], ['grad', 'Gradiente'], ['carga', 'Carga'], ['strat', 'Estratégia']];
+  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Previsão'], ['grad', 'Gradiente'], ['carga', 'Carga'], ['strat', 'Estratégia']];
   const navigation = document.getElementById('tabNav');
   navigation.innerHTML = '';
   tabs.forEach(([id, label], index) => {
@@ -1445,10 +1818,10 @@ function generateBriefingReport() {
     doc.text(value, ex, extY + 7);
   });
 
-  // Página 3(+) — splits por km
+  // Página 3(+) — previsão por km
   doc.addPage();
   doc.setTextColor(18, 55, 34); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-  doc.text('SPLITS POR KM · PROJEÇÃO DO TREINADOR', margin, 18);
+  doc.text('PREVISÃO POR KM · PROJEÇÃO DO ATLETA', margin, 18);
   doc.autoTable({
     startY: 24,
     margin: { left: margin, right: margin },
@@ -1509,7 +1882,7 @@ function setupCoachControls() {
 }
 
 function setupTabs() {
-  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Splits por km'], ['grad', 'Gradiente'], ['carga', 'Carga'], ['strat', 'Estratégia']];
+  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Previsão'], ['grad', 'Gradiente'], ['carga', 'Carga'], ['strat', 'Estratégia']];
   if (hasLoadedGpx) tabs.push(['briefing', 'Briefing']);
   const navigation = document.getElementById('tabNav');
   navigation.innerHTML = '';
@@ -1615,10 +1988,10 @@ function setupUpload() {
 }
 
 function setupTabs() {
-  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Splits por km'], ['grad', 'Gradiente'], ['carga', 'Carga'], ['insights', 'Insights'], ['strat', 'Estratégia']];
+  const tabs = [['geral', 'Visão geral'], ['alt', 'Altimetria'], ['splits', 'Previsão'], ['grad', 'Gradiente'], ['carga', 'Carga'], ['insights', 'Insights'], ['strat', 'Estratégia']];
   if (hasLoadedGpx) tabs.push(['briefing', 'Briefing']);
   const navigation = document.getElementById('tabNav'); navigation.innerHTML = '';
-  tabs.forEach(([id, label], index) => { const button = document.createElement('button'); button.dataset.tab = id; button.className = `tab${index === 0 ? ' on' : ''}`; button.textContent = label; button.addEventListener('click', () => { document.querySelectorAll('.tpan').forEach((panel) => panel.classList.remove('on')); document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('on')); document.getElementById(`tab-${id}`).classList.add('on'); button.classList.add('on'); if (id === 'alt') { drawElevation(); drawVerticalLoadChart(); } if (id === 'grad') { drawGradientChart(); drawGradientVolatility(); } if (id === 'carga') drawEffortChart(); if (id === 'insights') { drawGradientHistogram(); drawCumulativeChart(); } if (id === 'geral') setTimeout(() => routeMap.invalidateSize(), 0); }); navigation.appendChild(button); });
+  tabs.forEach(([id, label], index) => { const button = document.createElement('button'); button.dataset.tab = id; button.className = `tab${index === 0 ? ' on' : ''}`; button.innerHTML = id === 'splits' ? `${label}<span class="tab-flag">ITRA</span>` : label; button.setAttribute('aria-label', id === 'splits' ? `${label} por ITRA` : label); button.addEventListener('click', () => { document.querySelectorAll('.tpan').forEach((panel) => panel.classList.remove('on')); document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('on')); document.getElementById(`tab-${id}`).classList.add('on'); button.classList.add('on'); if (id === 'alt') { drawElevation(); drawVerticalLoadChart(); } if (id === 'grad') { drawGradientChart(); drawGradientVolatility(); } if (id === 'carga') drawEffortChart(); if (id === 'insights') { drawGradientHistogram(); drawCumulativeChart(); } if (id === 'geral') setTimeout(() => routeMap.invalidateSize(), 0); }); navigation.appendChild(button); });
 }
 
 document.addEventListener('vertex:ready', () => {

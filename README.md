@@ -5,9 +5,10 @@ Dashboard local para análise de rotas de trail running e construção de briefi
 ## Recursos
 
 - Carregamento local de arquivos `.gpx` por seleção ou drag-and-drop.
-- Mapa, distância, D+, D−, perfil altimétrico, gradiente, carga por km e splits.
+- Mapa, distância, D+, D−, perfil altimétrico, gradiente, carga e previsão por km.
 - Recorte manual de qualquer trecho do percurso e criação de setores do treinador.
 - Briefing de prova com perfil do atleta, meta de tempo, experiência técnica, uso de bastões e decisões por setor.
+- Projeção orientada ao atleta por ITRA Performance Index, com terreno, clima, experiência técnica, fadiga, altitude e microgradiente do GPX.
 - Notas por km e por setor.
 - Biblioteca de briefings salva somente no navegador, via IndexedDB. Nenhum GPX ou dado do atleta é enviado para um servidor.
 
